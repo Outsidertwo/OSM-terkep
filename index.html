@@ -10,10 +10,24 @@
     <script src="https://unpkg.com"></script>
 
     <style>
-        body { padding: 0; margin: 0; }
-        html, body, #map { height: 100%; width: 100vw; }
-        
-        /* GPS célkereszt gomb stílusa a kijelzőn */
+        /* Ez a rész kényszeríti ki a teljes képernyős megjelenítést mobilon és PC-n is */
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #222; /* Sötét háttér, amíg a műholdkép betölt */
+        }
+        /* GPS célkereszt gomb stílusa */
         .gps-button {
             position: absolute;
             bottom: 30px;
@@ -39,8 +53,8 @@
     <div class="gps-button" onclick="locateUser()">🎯</div>
 
     <script>
-        // 1. Térkép elindítása (Magyarország közepére állítva)
-        const map = L.map('map').setView([47.162, 19.503], 8);
+        // 1. Térkép elindítása (Magyarország közepére állítva, tágabb nézettel)
+        const map = L.map('map').setView([47.162, 19.503], 7);
 
         // 2. Alaptérkép rétegek (Műholdas és Normál utcatérkép)
         const osmStandard = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -51,26 +65,25 @@
             attribution: '© Google Maps'
         });
 
-        // Alapértelmezetten a műholdas kép indul el, mert a vasúti finomhangoláshoz ez kell
+        // Alapértelmezetten a műholdas kép indul el
         googleSatellite.addTo(map);
 
         const baseMaps = {
             "Műholdas (Google)": googleSatellite,
             "Alaptérkép (OSM)": osmStandard
         };
-        // Kapcsológomb elhelyezése a jobb felső sarokban
-        L.control.layers(baseMaps).addTo(map);
+        // Kapcsológomb elhelyezése
+        L.control.layers(baseMaps, null, {position: 'topright'}).addTo(map);
 
-        // 3. Konfigurációs fájl beolvasása a háttérben
+        // 3. Konfigurációs fájl ellenőrzése
         fetch('konfiguracio.json')
             .then(response => response.json())
             .then(config => {
                 console.log("MÁV Konfiguráció sikeresen beolvasva:", config);
-                // Ide épül be a következő lépésben az Overpass élő adatletöltés
             })
             .catch(err => console.error("Hiba a konfiguráció betöltésekor:", err));
 
-        // 4. GPS Helymeghatározás kezelése (PC-n és Mobilon is)
+        // 4. GPS Helymeghatározás kezelése
         let userLocationMarker = null;
 
         function locateUser() {
@@ -79,14 +92,12 @@
 
         map.on('locationfound', function(e) {
             if (userLocationMarker) map.removeLayer(userLocationMarker);
-            
-            // Kék kör és pont a saját helyzetünknek
             userLocationMarker = L.circle(e.latlng, {radius: e.accuracy, color: '#007bff', fillColor: '#007bff', fillOpacity: 0.15}).addTo(map);
             L.popup().setLatLng(e.latlng).setContent("Itt vagy most a pályán!").openOn(map);
         });
 
         map.on('locationerror', function() {
-            alert("A GPS koordináták lekérése sikertelen. Kérlek, engedélyezd a helymeghatározást a böngésződben!");
+            alert("A GPS koordináták lekérése sikertelen. Kérlek, engedélyezd a helymeghatározást!");
         });
     </script>
 </body>
