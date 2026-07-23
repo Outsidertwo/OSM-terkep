@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>MÁV Vasúti Kataszter és GPS Térkép</title>
+    <title>MÁV Vasúti GPS Térkép Alap</title>
     
-    <!-- Leaflet térképmotor CSS és JS -->
+    <!-- A hivatalos Leaflet stíluslap (Internetes eléréssel, ahogy a gyümölcstérkép is csinálja) -->
     <link rel="stylesheet" href="https://unpkg.com" />
-    <script src="https://unpkg.com"></script>
 
     <style>
-        /* Ez a rész kényszeríti ki a teljes képernyős megjelenítést mobilon és PC-n is */
+        /* Biztonságos teljes képernyős kényszerítés */
         html, body {
             height: 100%;
             margin: 0;
@@ -25,79 +24,35 @@
             right: 0;
             width: 100%;
             height: 100%;
-            background-color: #222; /* Sötét háttér, amíg a műholdkép betölt */
-        }
-        /* GPS célkereszt gomb stílusa */
-        .gps-button {
-            position: absolute;
-            bottom: 30px;
-            right: 20px;
-            z-index: 1000;
-            background: white;
-            padding: 12px;
-            border-radius: 50%;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
-            cursor: pointer;
-            font-size: 24px;
-            width: 30px;
-            height: 30px;
-            text-align: center;
-            line-height: 30px;
-            user-select: none;
+            background-color: #222; /* Sötét háttér a betöltésig */
         }
     </style>
+
+    <!-- A hivatalos Leaflet térképmotor (Internetes eléréssel, külső szerverről) -->
+    <script src="https://unpkg.com"></script>
 </head>
 <body>
 
+    <!-- A térkép doboza -->
     <div id="map"></div>
-    <div class="gps-button" onclick="locateUser()">🎯</div>
 
     <script>
-        // 1. Térkép elindítása (Magyarország közepére állítva, tágabb nézettel)
-        const map = L.map('map').setView([47.162, 19.503], 7);
+        // Megvárjuk, amíg a böngésző mindent letölt a hivatalos szerverről
+        window.addEventListener('DOMContentLoaded', (event) => {
+            try {
+                // Térkép elindítása Jászberény koordinátáival, 13-as nagyítással
+                const map = L.map('map').setView([47.505, 19.885], 13);
 
-        // 2. Alaptérkép rétegek (Műholdas és Normál utcatérkép)
-        const osmStandard = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap'
-        });
+                // A standard OpenStreetMap utcatérkép réteg hozzáadása
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '© OpenStreetMap'
+                }).addTo(map);
 
-        const googleSatellite = L.tileLayer('https://google.com{x}&y={y}&z={z}', {
-            attribution: '© Google Maps'
-        });
-
-        // Alapértelmezetten a műholdas kép indul el
-        googleSatellite.addTo(map);
-
-        const baseMaps = {
-            "Műholdas (Google)": googleSatellite,
-            "Alaptérkép (OSM)": osmStandard
-        };
-        // Kapcsológomb elhelyezése
-        L.control.layers(baseMaps, null, {position: 'topright'}).addTo(map);
-
-        // 3. Konfigurációs fájl ellenőrzése
-        fetch('konfiguracio.json')
-            .then(response => response.json())
-            .then(config => {
-                console.log("MÁV Konfiguráció sikeresen beolvasva:", config);
-            })
-            .catch(err => console.error("Hiba a konfiguráció betöltésekor:", err));
-
-        // 4. GPS Helymeghatározás kezelése
-        let userLocationMarker = null;
-
-        function locateUser() {
-            map.locate({setView: true, maxZoom: 18});
-        }
-
-        map.on('locationfound', function(e) {
-            if (userLocationMarker) map.removeLayer(userLocationMarker);
-            userLocationMarker = L.circle(e.latlng, {radius: e.accuracy, color: '#007bff', fillColor: '#007bff', fillOpacity: 0.15}).addTo(map);
-            L.popup().setLatLng(e.latlng).setContent("Itt vagy most a pályán!").openOn(map);
-        });
-
-        map.on('locationerror', function() {
-            alert("A GPS koordináták lekérése sikertelen. Kérlek, engedélyezd a helymeghatározást!");
+                console.log("A hivatalos térképmotor sikeresen elindult!");
+            } catch (error) {
+                alert("A térkép betöltése elakadt: " + error.message);
+            }
         });
     </script>
 </body>
