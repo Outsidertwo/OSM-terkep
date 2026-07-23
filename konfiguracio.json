@@ -1,0 +1,44 @@
+{
+  "globalis_szuro": "operator=MÁV",
+  "objektum_tipusok": [
+    {
+      "megnevezes": "Felsővezeték oszlop",
+      "feltetel": "power=catenary_mast",
+      
+      "terkepi_felirat_mezok": [
+        {"nev": "Száma", "osm_kulcs": "ref"},
+        {"nev": "Súly", "osm_kulcs": "catenary_mast:supporting", "tipus": "pipa"},
+        {"nev": "Szikraköz", "osm_kulcs": "note", "tipus": "pipa"},
+        {"nev": "Földelési pont", "osm_kulcs": "note", "tipus": "pipa"},
+        {"nev": "Fixpont", "osm_kulcs": "note", "tipus": "pipa"},
+        {"nev": "Szakaszoló", "osm_kulcs": "power=switch", "tipus": "szoveg_ha_pipa"},
+        {"nev": "Transzformátor", "osm_kulcs": "power=transformer", "tipus": "szoveg_ha_pipa"}
+      ],
+      
+      "adatlap_extra_mezok": [
+        {"nev": "Vezeték-kihorgonyzás (Anchor)", "osm_kulcs": "catenary_mast:attachment", "tipus": "pipa"},
+        {"nev": "Oszloplehorgonyzás (Guyed)", "osm_kulcs": "guyed", "tipus": "pipa"},
+        {"nev": "Szerkezet jellege", "tipus": "legordulo", "opciok": ["Oszlop", "Portálgerenda", "Iránysodrony"]},
+        {"nev": "Oszlop típusa", "tipus": "legordulo", "opciok": ["T", "L", "Ta", "F", "K", "KR", "MKR", "P", "BM", "CSŐ", "FA"]},
+        {"nev": "Hasznos/teljes hossza", "tipus": "extra_adat_github"},
+        {"nev": "Alap típus és méret", "tipus": "extra_adat_github"},
+        {"nev": "Teljes betonmennyiség", "tipus": "extra_adat_github"},
+        {"nev": "Kihúzás mértéke", "tipus": "extra_adat_github"},
+        {"nev": "Oszlop távolsága a szelvényezéshez", "tipus": "extra_adat_github"},
+        {"nev": "Oszlopél - vágánytengely távolság", "tipus": "extra_adat_github"},
+        {"nev": "Megjegyzés", "tipus": "extra_adat_github"},
+        {"nev": "Fénykép", "tipus": "kep_nev"}
+      ]
+    },
+    {
+      "megnevezes": "Szelvénykő",
+      "feltetel": "railway=milestone",
+      "felirat_kulcs": "ref"
+    },
+    {
+      "megnevezes": "Vasúti útátjáró",
+      "feltetel": "railway=level_crossing",
+      "felirat_kulcs": "ref"
+    }
+  ]
+}
