@@ -1,59 +1,24 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>MÁV Vasúti GPS Térkép Alap</title>
-    
-    <!-- A hivatalos Leaflet stíluslap (Internetes eléréssel, ahogy a gyümölcstérkép is csinálja) -->
-    <link rel="stylesheet" href="https://unpkg.com" />
-
-    <style>
-        /* Biztonságos teljes képernyős kényszerítés */
-        html, body {
-            height: 100%;
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-        }
-        #map {
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            width: 100%;
-            height: 100%;
-            background-color: #222; /* Sötét háttér a betöltésig */
-        }
-    </style>
-
-    <!-- A hivatalos Leaflet térképmotor (Internetes eléréssel, külső szerverről) -->
-    <script src="https://unpkg.com"></script>
+<meta charset="UTF-8">
+<title>Térkép</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; }
+  #map { width: 100%; height: 100vh; }
+</style>
 </head>
 <body>
-
-    <!-- A térkép doboza -->
-    <div id="map"></div>
-
-    <script>
-        // Megvárjuk, amíg a böngésző mindent letölt a hivatalos szerverről
-        window.addEventListener('DOMContentLoaded', (event) => {
-            try {
-                // Térkép elindítása Jászberény koordinátáival, 13-as nagyítással
-                const map = L.map('map').setView([47.505, 19.885], 13);
-
-                // A standard OpenStreetMap utcatérkép réteg hozzáadása
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    maxZoom: 19,
-                    attribution: '© OpenStreetMap'
-                }).addTo(map);
-
-                console.log("A hivatalos térképmotor sikeresen elindult!");
-            } catch (error) {
-                alert("A térkép betöltése elakadt: " + error.message);
-            }
-        });
-    </script>
+<div id="map"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+  const map = L.map('map').setView([47.1625, 19.5033], 7); // Magyarország közepe
+ 
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap közreműködők'
+  }).addTo(map);
+</script>
 </body>
 </html>
