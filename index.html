@@ -2,23 +2,200 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Térkép</title>
+<title>MÁV elemek — 120a és 82 vonal</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-locatecontrol/0.79.0/L.Control.Locate.min.css" />
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
   #map { width: 100%; height: 100vh; }
+  #status {
+    position: absolute; top: 10px; left: 50px; z-index: 1000;
+    background: white; padding: 6px 12px; border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4); font-size: 13px;
+    max-width: 60vw;
+  }
+  #loader {
+    position: absolute; top: 54px; left: 50px; z-index: 1000;
+    background: white; padding: 8px 12px; border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4); font-size: 13px;
+  }
+  .mav-icon {
+    border-radius: 50%; border: 2px solid white;
+    box-shadow: 0 0 3px rgba(0,0,0,0.6);
+  }
+  .popup-table { font-size: 12px; border-collapse: collapse; }
+  .popup-table td { padding: 1px 6px 1px 0; vertical-align: top; }
+  .popup-table td:first-child { color: #555; white-space: nowrap; }
 </style>
 </head>
 <body>
 <div id="map"></div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script>
-  const map = L.map('map').setView([47.1625, 19.5033], 7); // Magyarország közepe
+<div id="status">Nincs betöltött adat.</div>
+<div id="loader">
+  <label for="fileInput">GeoJSON betöltése (Overpass Turbo exportból):</label><br>
+  <input type="file" id="fileInput" accept=".geojson,.json" />
+</div>
  
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-locatecontrol/0.79.0/L.Control.Locate.min.js"></script>
+<script>
+  const map = L.map('map').setView([47.35, 19.85], 10);
+ 
+  // --- Alaptérkép réteg-választó (OSM standard / műholdas) ---
+  const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; OpenStreetMap közreműködők'
+  });
+ 
+  // Google Műhold csempéit közvetlenül nem lehet szabályosan, kulcs nélkül beágyazni,
+  // ezért helyette az Esri World Imagery műholdas réteget használjuk, ami szabadon elérhető.
+  const satelliteLayer = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    {
+      maxZoom: 19,
+      attribution: 'Tiles &copy; Esri — Esri, Maxar, Earthstar Geographics'
+    }
+  );
+ 
+  osmLayer.addTo(map);
+ 
+  // --- GPS gomb (saját pozíció) ---
+  L.control.locate({
+    position: 'topleft',
+    strings: { title: 'Saját pozícióm' },
+    flyTo: true
   }).addTo(map);
+ 
+  const statusEl = document.getElementById('status');
+  const fileInput = document.getElementById('fileInput');
+ 
+  // Elemtípusok: cluster-csoport, szín, tesztfüggvény a tag-ek alapján
+  const TYPES = [
+    {
+      key: 'szelvenyko',
+      label: 'Szelvénykő',
+      color: '#1a73e8',
+      test: (t) => t.railway === 'milestone'
+    },
+    {
+      key: 'atjaro',
+      label: 'Útátjáró',
+      color: '#e8341a',
+      test: (t) => t.railway === 'level_crossing'
+    },
+    {
+      key: 'oszlop',
+      label: 'Felsővezeték-oszlop',
+      color: '#1ae86b',
+      test: (t) => t.power === 'catenary_mast'
+    }
+  ];
+  // Egyelőre ezek rejtve maradnak (nem kapnak külön cluster-csoportot, nem kerülnek ki a térképre):
+  // railway=switch / signal / station / halt / stop / junction / radio stb.
+ 
+  // Cluster-csoportok létrehozása, típusonként külön
+  const clusterGroups = {};
+  TYPES.forEach(type => {
+    clusterGroups[type.key] = L.markerClusterGroup({
+      disableClusteringAtZoom: 16,
+      iconCreateFunction: (cluster) => {
+        const count = cluster.getChildCount();
+        return L.divIcon({
+          html: `<div style="background:${type.color}; color:white; border-radius:50%;
+                      width:34px; height:34px; display:flex; align-items:center;
+                      justify-content:center; font-weight:bold; font-size:12px;
+                      border:2px solid white; box-shadow:0 0 3px rgba(0,0,0,0.6);">
+                   ${count}
+                 </div>`,
+          className: '',
+          iconSize: [34, 34]
+        });
+      }
+    });
+    clusterGroups[type.key].addTo(map);
+  });
+ 
+  function makeIcon(color) {
+    return L.divIcon({
+      className: 'mav-icon',
+      html: `<div style="background:${color}; width:14px; height:14px; border-radius:50%;"></div>`,
+      iconSize: [14, 14]
+    });
+  }
+ 
+  function popupContent(tags) {
+    const rows = Object.entries(tags)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`)
+      .join('');
+    return `<table class="popup-table">${rows}</table>`;
+  }
+ 
+  function classify(tags) {
+    for (const type of TYPES) {
+      if (type.test(tags)) return type;
+    }
+    return null; // nem a három ismert típus egyike -> egyelőre nem jelenítjük meg
+  }
+ 
+  // --- Réteg-választó: alaptérkép + elemtípusok egy panelen ---
+  const layerControl = L.control.layers(
+    { 'OpenStreetMap': osmLayer, 'Műholdas (Esri)': satelliteLayer },
+    {},
+    { collapsed: false, position: 'topright' }
+  ).addTo(map);
+  TYPES.forEach(type => {
+    layerControl.addOverlay(clusterGroups[type.key], type.label);
+  });
+ 
+  function loadGeoJSON(geojson) {
+    TYPES.forEach(t => clusterGroups[t.key].clearLayers());
+    const counts = {};
+    TYPES.forEach(t => counts[t.key] = 0);
+    let skipped = 0;
+ 
+    geojson.features.forEach(f => {
+      if (!f.geometry || f.geometry.type !== 'Point' || !f.properties) return;
+      const tags = f.properties;
+      const type = classify(tags);
+      if (!type) { skipped++; return; }
+      counts[type.key]++;
+      const [lon, lat] = f.geometry.coordinates;
+      const marker = L.marker([lat, lon], { icon: makeIcon(type.color) });
+      marker.bindPopup(popupContent(tags));
+      clusterGroups[type.key].addLayer(marker);
+    });
+ 
+    const summary = TYPES.map(t => `${t.label}: ${counts[t.key]}`).join(' · ');
+    statusEl.textContent = `Betöltve — ${summary} (egyéb, egyelőre rejtett elem: ${skipped})`;
+ 
+    const allLayers = TYPES.map(t => clusterGroups[t.key]).filter(g => g.getLayers().length > 0);
+    if (allLayers.length > 0) {
+      const group = L.featureGroup(allLayers.flatMap(g => g.getLayers()));
+      map.fitBounds(group.getBounds().pad(0.1));
+    }
+  }
+ 
+  fileInput.addEventListener('change', (ev) => {
+    const file = ev.target.files[0];
+    if (!file) return;
+    statusEl.textContent = 'Fájl beolvasása...';
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const geojson = JSON.parse(e.target.result);
+        loadGeoJSON(geojson);
+      } catch (err) {
+        statusEl.textContent = 'Hiba a fájl feldolgozásakor: ' + err.message;
+        statusEl.style.color = 'red';
+      }
+    };
+    reader.readAsText(file);
+  });
 </script>
 </body>
 </html>
+ 
