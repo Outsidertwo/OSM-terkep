@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>Adatlap teszt — Felsővezeték-oszlop</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: sans-serif; font-size: 16px;
+    display: flex; height: 100vh; background: #f4f4f4;
+  }
+  #forma {
+    width: 55%; overflow-y: auto; padding: 20px;
+    background: white; border-right: 1px solid #ccc;
+  }
+  #elonezet {
+    width: 45%; overflow-y: auto; padding: 20px;
+  }
+  h1 { font-size: 20px; margin-top: 0; }
+  h2 { font-size: 16px; margin: 18px 0 6px; color: #333; }
+  .mezo { margin-bottom: 10px; }
+  .mezo label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .mezo.szoveges label, .mezo.szoveges { display: block; }
+  .mezo.szoveges label { display: block; margin-bottom: 3px; font-weight: bold; cursor: default; }
+  input[type="text"], input[type="number"], select, textarea {
+    width: 100%; padding: 6px; font-size: 15px; border: 1px solid #ccc; border-radius: 3px;
+  }
+  textarea { min-height: 60px; }
+  .gyerek { margin-left: 26px; padding-left: 10px; border-left: 2px solid #eee; margin-top: 6px; display: none; }
+  .gyerek.aktiv { display: block; }
+  .megjegyzes { font-size: 12px; color: #888; margin: 2px 0 0 26px; }
+  .terkepen-jelzo { font-size: 11px; color: #1a73e8; margin-left: 4px; }
+  .doboz {
+    background: white; border: 1px solid #ddd; border-radius: 6px;
+    padding: 12px 14px; margin-bottom: 16px;
+  }
+  .cimke-elonezet {
+    display: inline-block; background: rgba(255,255,255,0.92); border: 1px solid #ccc;
+    padding: 3px 8px; border-radius: 3px; font-size: 15px;
+  }
+  .label-id { color: #000; font-weight: bold; }
+  .label-desc { color: #8a5a00; font-weight: bold; margin-left: 4px; }
+  pre { font-size: 12px; background: #f8f8f8; padding: 8px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; }
+  .ag-blokk { border: 1px solid #eee; border-radius: 4px; padding: 8px; margin-bottom: 8px; }
+  .ag-blokk h3 { font-size: 14px; margin: 0 0 6px; }
+  .szigetelo-sor { display: flex; gap: 8px; margin-bottom: 6px; align-items: center; }
+  .szigetelo-sor select { width: auto; flex: 1; }
+  button.kicsi {
+    font-size: 13px; padding: 4px 10px; border: 1px solid #ccc; border-radius: 4px;
+    background: #f0f0f0; cursor: pointer;
+  }
+  .radio-csoport { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+  .radio-csoport label {
+    display: inline-flex; align-items: center; gap: 4px; font-weight: normal;
+    cursor: pointer; white-space: nowrap; margin-bottom: 0;
+  }
+  .radio-csoport input[type="radio"] { width: auto; }
+  .mini-radio-csoport { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 4px; }
+  .mini-radio-csoport label {
+    display: inline-flex; align-items: center; gap: 3px; font-size: 13px;
+    font-weight: normal; cursor: pointer; white-space: nowrap;
+  }
+  .mini-radio-csoport input[type="radio"] { width: auto; }
+</style>
+</head>
+<body>
+<div id="forma">
+  <h1>Adatlap teszt — <span id="cimSpan"></span></h1>
+  <div id="mezokKontener"></div>
+</div>
+<div id="elonezet">
+  <div class="doboz">
+    <h2>Térképi címke előnézet</h2>
+    <div id="cimkeElonezet" class="cimke-elonezet"></div>
+  </div>
+  <div class="doboz">
+    <h2>Generált OSM-tagek</h2>
+    <pre id="osmElonezet"></pre>
+  </div>
+  <div class="doboz">
+    <h2>Saját rekord (JSON)</h2>
+    <pre id="rekordElonezet"></pre>
+  </div>
+  <div class="doboz">
+    <h2>Feszítési terv szöveg (generált a formából)</h2>
+    <pre id="feszitesiTervElonezet"></pre>
+  </div>
+  <div class="doboz">
+    <h2>Feszítési terv beolvasása (teszt)</h2>
+    <textarea id="feszitesiTervBemenet" placeholder="Illeszd be ide, pl.:&#10;12T 8,4/11,5; C1,1 2,90m3 kh:0,2m&#10;la: C0,9-1,98m3" style="width:100%; min-height:60px; font-family:monospace; font-size:13px;"></textarea>
+    <br><button type="button" class="kicsi" id="feszitesiTervBeolvasBtn" style="margin-top:6px;">Beolvasás a formába</button>
+    <div id="feszitesiTervHiba" style="color:#c0392b; font-size:13px; margin-top:6px;"></div>
+  </div>
+</div>
+
+<script src="./adatlap_motor.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "uzemelteto": "MÁV",
+  "vonalak": [
+    { "nev": "120a (Budapest–Szolnok)", "relation": 252069, "aktiv": true },
+    { "nev": "82 (Hatvan–Újszász)", "relation": 77374, "aktiv": true },
+    { "nev": "100 (Budapest–Záhony)", "relation": 4481917, "aktiv": true }
+  ]
+}
