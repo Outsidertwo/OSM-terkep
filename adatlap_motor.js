@@ -1,8 +1,6 @@
-// Adatlap-tesztelő motor — a séma-vezérelt űrlap-renderelő és előnézetek.
-// A tag-visszafejtés és a feszítési terv konverter az oszlop_visszafejto.js-ben van
-// (közös a térképpel) — ezt a fájlt AZ UTÁN kell betölteni <script>-ben.
-// Csak ezt a fájlt kell módosítani új logikai finomításnál — az adatlap_teszt.html-hez
-// nem kell hozzányúlni.
+// Adatlap-tesztelő motor — a séma-vezérelt űrlap-renderelő, előnézetek és a
+// feszítési terv konverter. Csak ezt a fájlt kell módosítani új logikai
+// finomításnál — az adatlap_teszt.html-hez nem kell hozzányúlni.
 
   // Beágyazott séma — ha a vonalak.json-hoz hasonlóan külön fájlból is be lehet tölteni,
   // itt is megpróbáljuk előbb a fájlt, csak utána esünk vissza a beágyazottra.
@@ -25,39 +23,7 @@
     document.getElementById('cimSpan').textContent = sema.tipus_nev;
     inicializalAllapot(sema.mezok);
     kirajzolForma();
-
-    // Ha a térkép popup "Szerkesztés" gombjából jövünk, az URL-ben van egy base64-kódolt
-    // OSM-tag-készlet — ezt megpróbáljuk visszafejteni a mezőkre (legjobb-erőfeszítés:
-    // amit nem tud egyértelműen megfeleltetni, azt üresen hagyja, nem hibázik el).
-    const urlParams = new URLSearchParams(window.location.search);
-    const kodoltTagek = urlParams.get('tagek');
-    if (kodoltTagek) {
-      try {
-        const bejovoTagek = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(kodoltTagek)))));
-        importOsmTagekbol(bejovoTagek);
-      } catch (err) {
-        console.warn('A bejövő tagek nem voltak feldolgozhatók:', err);
-      }
-    }
-
     frissitElonezet();
-  }
-
-  // A tényleges visszafejtést az oszlop_visszafejto.js közös visszafejtOszlopAdatokat()
-  // függvénye végzi (ugyanaz a logika, mint amit a térkép popupja is használ).
-  function importOsmTagekbol(bejovoTagek) {
-    const { allapot: uj } = visszafejtOszlopAdatokat(sema, bejovoTagek);
-    Object.assign(allapot, uj);
-
-    // Az űrlap mezőinek vizuális szinkronizálása a beolvasott értékekkel.
-    document.querySelectorAll('#mezokKontener input[data-kod], #mezokKontener textarea[data-kod]').forEach(el => {
-      const kod = el.dataset.kod;
-      if (!(kod in allapot)) return;
-      if (el.type === 'checkbox') el.checked = !!allapot[kod];
-      else if (el.type !== 'radio') el.value = allapot[kod];
-    });
-    szinkronizaljRadiokat(sema.mezok);
-    frissitGyerekLathatosag();
   }
 
   function inicializalAllapot(mezok) {
@@ -74,8 +40,99 @@
     });
   }
 
-  // magyarTizedes, epitsFeszitesiTervSzoveget, ertelmezFeszitesiTervet,
-  // OSZLOP_TIPUS_KODOK, ALAPTIPUS_KODOK: lásd oszlop_visszafejto.js (közös a térképpel)
+  function magyarTizedes(ertek, tizedesek) {
+    if (ertek === '' || ertek === undefined || ertek === null) return '';
+    const szam = Number(String(ertek).replace(',', '.'));
+    if (isNaN(szam)) return '';
+    return szam.toFixed(tizedesek === undefined ? 1 : tizedesek).replace('.', ',');
+  }
+
+  // ============================================================
+  // FESZÍTÉSI TERV KONVERTER
+  // B→A (formázó): a strukturált adatból összerakja a tömör szöveget.
+  // A→B (értelmező): a tömör szövegből visszafejti a mezőket.
+  // Csak azt a mezőkört fedi le, ami ténylegesen szerepel a feszítési
+  // terv jelölésben (típus, hossz, alaptest, betonmennyiség, kihúzás,
+  // lehorgonyzás) — a térképi/OSM jelzők (súly, szikraköz stb.) nem
+  // részei ennek a szövegnek.
+  // ============================================================
+
+  function epitsFeszitesiTervSzoveget() {
+    const tipus = allapot['oszlop_tipus'] || '';
+    if (!tipus) return '(még nincs elég adat — legalább az oszlop típusa kell)';
+
+    const meret = allapot['szerkezeti_elem_meret'] || '';
+    const cSuffix = allapot['tocsavaros'] ? 'C' : '';
+    const tipusResz = `${meret}${tipus}${cSuffix}`;
+
+    const hh = magyarTizedes(allapot['hasznos_hossz'], 1);
+    const th = magyarTizedes(allapot['teljes_hossz'], 1);
+    const hosszResz = (hh || th) ? `${hh}/${th};` : '';
+
+    const alapTipusResz = (allapot['alaptipus'] || '') + (allapot['alap_meret'] || '');
+    const betonResz = allapot['betonmennyiseg'] !== ''
+      ? `${magyarTizedes(allapot['betonmennyiseg'], 2)}m3` : '';
+    const kihuzasResz = allapot['kihuzas_merteke'] !== ''
+      ? `kh:${magyarTizedes(allapot['kihuzas_merteke'], 1)}m` : '';
+
+    const foSor = [tipusResz, hosszResz, alapTipusResz, betonResz, kihuzasResz]
+      .filter(Boolean).join(' ');
+
+    const sorok = [foSor];
+    if (allapot['oszloplehorgonyzas']) {
+      const laTipusResz = (allapot['la_alaptipus'] || '') + (allapot['la_meret'] || '');
+      const laBeton = allapot['la_betonmennyiseg'] !== ''
+        ? magyarTizedes(allapot['la_betonmennyiseg'], 2) : '';
+      sorok.push(`la: ${laTipusResz}${laBeton ? '-' + laBeton + 'm3' : ''}`);
+    }
+    return sorok.join('\n');
+  }
+
+  const OSZLOP_TIPUS_KODOK = ['MKR', 'KR', 'Ta', 'CSŐ', 'T', 'L', 'F', 'K', 'P', 'BM']; // hosszabb kódok elöl!
+  const ALAPTIPUS_KODOK = ['LE', 'A', 'B', 'U', 'C', 'V', 'Z', 'Y', 'D', 'E', 'F', 'G'];
+
+  function ertelmezFeszitesiTervet(szoveg) {
+    const sorok = szoveg.split('\n').map(s => s.trim()).filter(Boolean);
+    if (sorok.length === 0) throw new Error('Üres szöveg.');
+
+    const foSor = sorok[0];
+    const laSor = sorok.find(s => s.toLowerCase().startsWith('la:'));
+
+    const tipusMinta = new RegExp(
+      `^([\\d/]*)(${OSZLOP_TIPUS_KODOK.join('|')})(C)?\\s+([\\d,]+)\\/([\\d,]+);\\s*(${ALAPTIPUS_KODOK.join('|')})([\\d,x×]+)\\s+([\\d,]+)m3(?:\\s+kh:([\\d,]+)m)?\\s*$`
+    );
+    const talalat = foSor.match(tipusMinta);
+    if (!talalat) {
+      throw new Error('A fő sor nem illeszkedik a várt mintára (pl. "12T 8,4/11,5; C1,1 2,90m3 kh:0,2m").');
+    }
+    const eredmeny = {
+      szerkezeti_elem_meret: talalat[1],
+      oszlop_tipus: talalat[2],
+      tocsavaros: !!talalat[3],
+      hasznos_hossz: talalat[4].replace(',', '.'),
+      teljes_hossz: talalat[5].replace(',', '.'),
+      alaptipus: talalat[6],
+      alap_meret: talalat[7],
+      betonmennyiseg: talalat[8].replace(',', '.'),
+      kihuzas_merteke: talalat[9] ? talalat[9].replace(',', '.') : '',
+      oszloplehorgonyzas: false,
+      la_alaptipus: '', la_meret: '', la_betonmennyiseg: ''
+    };
+
+    if (laSor) {
+      const laMinta = new RegExp(`^la:\\s*(${ALAPTIPUS_KODOK.join('|')})([\\d,x×]+)(?:-([\\d,]+)m3)?\\s*$`, 'i');
+      const laTalalat = laSor.match(laMinta);
+      if (!laTalalat) {
+        throw new Error('A "la:" sor nem illeszkedik a várt mintára (pl. "la: C0,9-1,98m3").');
+      }
+      eredmeny.oszloplehorgonyzas = true;
+      eredmeny.la_alaptipus = laTalalat[1];
+      eredmeny.la_meret = laTalalat[2];
+      eredmeny.la_betonmennyiseg = laTalalat[3] ? laTalalat[3].replace(',', '.') : '';
+    }
+
+    return eredmeny;
+  }
 
   function alkalmazFeszitesiTervEredmenyt(eredmeny) {
     Object.entries(eredmeny).forEach(([kod, ertek]) => { allapot[kod] = ertek; });
@@ -91,7 +148,11 @@
     frissitElonezet();
   }
 
-  // escapeHtml: lásd oszlop_visszafejto.js
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
 
   function mezoAktiv(mezo) {
     // Egy checkbox-mező akkor "aktív" (gyerekei akkor látszanak), ha be van pipálva.
@@ -434,22 +495,15 @@
     document.getElementById('osmElonezet').textContent = JSON.stringify(osszegyujtOsmTageket(), null, 2);
     const rekord = { ...formazottRekord(), tartoszerkezetek: tartoszerkezetek };
     document.getElementById('rekordElonezet').textContent = JSON.stringify(rekord, null, 2);
-    document.getElementById('feszitesiTervElonezet').textContent = epitsFeszitesiTervSzoveget(allapot);
+    document.getElementById('feszitesiTervElonezet').textContent = epitsFeszitesiTervSzoveget();
   }
 
-  betoltSchema();
+  window.mentes = function() {
+    frissitElonezet();
+    return osszegyujtOsmTageket();
+  };
 
-  // Bezárás gomb: ha a térkép modaljában (iframe-ben) vagyunk, jelezzük a szülő oldalnak,
-  // hogy zárja be a modalt. Ha önállóan van megnyitva (nincs szülő), egyszerűen visszalépünk.
-  document.getElementById('bezarasGomb').addEventListener('click', () => {
-    if (window.self !== window.top) {
-      window.parent.postMessage('adatlap-bezaras-kerve', '*');
-    } else if (window.history.length > 1) {
-      window.history.back();
-    } else {
-      window.close();
-    }
-  });
+  betoltSchema();
 
   document.getElementById('feszitesiTervBeolvasBtn').addEventListener('click', () => {
     const hibaEl = document.getElementById('feszitesiTervHiba');
