@@ -34,7 +34,7 @@
   .popup-table { font-size: 15px; border-collapse: collapse; }
   .popup-table td { padding: 3px 8px 3px 0; vertical-align: top; }
   .popup-table td:first-child { color: #555; white-space: nowrap; }
- 
+
   /* --- Térképi címkék (permanens tooltip-ek) --- */
   .mav-label {
     background: rgba(255,255,255,0.92);
@@ -44,7 +44,7 @@
   .mav-label::before { display: none; } /* tooltip nyílvég elrejtése */
   .label-id { color: #000; font-weight: bold; }
   .label-desc { color: var(--pole-desc-color, #8a5a00); font-weight: bold; margin-left: 3px; }
- 
+
   /* Leaflet saját kezelőfelület-elemeinek (réteg-választó, gombok) nagyítása */
   .leaflet-control-layers { font-size: 15px; }
   .leaflet-bar a { width: 34px; height: 34px; line-height: 34px; font-size: 18px; }
@@ -57,21 +57,33 @@
 <button id="saveSnapshotBtn" style="display:none; position:absolute; top:54px; left:50px; z-index:1000; padding:6px 12px; border-radius:4px; border:1px solid #ccc; background:white; font-size:14px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.4);">
   Mentés adatok.geojson-ként
 </button>
-<div style="position:absolute; top:98px; left:50px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:14px;">
-  <label for="manualFileInput">Helyi fájl betöltése (ha az élő adat hibás/hiányos):</label><br>
-  <input type="file" id="manualFileInput" accept=".geojson,.json" />
+<div style="position:absolute; top:98px; left:50px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:14px; display:flex; flex-direction:column; gap:8px; min-width:240px;">
+  <div>
+    <label for="manualFileInput">Helyi fájl betöltése (ha az élő adat hibás/hiányos):</label><br>
+    <input type="file" id="manualFileInput" accept=".geojson,.json" />
+  </div>
+  <button id="adatokLetoltesBtn" style="padding:6px 12px; border-radius:4px; border:1px solid #ccc; background:#eef4ff; font-size:14px; cursor:pointer;">
+    Adatok letöltése
+  </button>
 </div>
-<details id="vonalPanel" style="position:absolute; top:150px; left:50px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:14px; max-width:260px;">
+<details id="vonalPanel" style="position:absolute; top:194px; left:50px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:14px; max-width:260px;">
   <summary style="cursor:pointer; font-weight:bold;">Figyelt vonalak</summary>
   <div id="vonalLista" style="margin-top:6px;"></div>
 </details>
- 
+<div style="position:absolute; top:308px; left:50px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:14px;">
+  <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+    <input type="checkbox" id="szerkesztoiModKapcsolo" />
+    Szerkesztői mód (elemek mozgatása)
+  </label>
+</div>
+
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-locatecontrol/0.79.0/L.Control.Locate.min.js"></script>
 <script>
   const map = L.map('map').setView([47.35, 19.85], 10);
- 
+
   // --- Alaptérkép réteg-választó (OSM standard / műholdas) ---
   const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 21,
@@ -95,20 +107,39 @@
     }
   );
   osmLayer.addTo(map);
- 
+
   // --- GPS gomb ---
   L.control.locate({ position: 'topleft', strings: { title: 'Saját pozícióm' }, flyTo: true }).addTo(map);
- 
+
   const statusEl = document.getElementById('status');
- 
+
+  // A vonalanként (élőben) letöltött, összes elem — ebből szűr a "Figyelt vonalak" panel,
+  // hálózati kérés nélkül. Minden elem properties._vonal mezője jelzi, melyik vonalhoz
+  // tartozik (átfedő vonalaknál egy elem csak az őt ténylegesen tartalmazó vonalhoz tartozik).
+  let osszesFeature = [];
+  const letoltottVonalak = new Set();
+
+  // Szerkesztői mód — csak ekkor mozgathatók az elemek. FONTOS: ez egyelőre csak felületi
+  // kapcsoló, nem valódi jogosultságkezelés (bárki bepipálhatja) — a tényleges védelem majd
+  // a token-alapú beléptetéssel készül el a 2. fázisban.
+  let szerkesztoiMod = false;
+  const osszesMarker = []; // minden létrehozott marker, hogy a mód váltásakor egyben tudjuk (de)aktiválni a húzást
+  document.getElementById('szerkesztoiModKapcsolo').addEventListener('change', (ev) => {
+    szerkesztoiMod = ev.target.checked;
+    osszesMarker.forEach(m => {
+      if (szerkesztoiMod) m.dragging.enable();
+      else m.dragging.disable();
+    });
+  });
+
   // A zoomszint, ami felett a clusterek egyedi pontokra bomlanak és a címkék megjelennek.
   // Egyelőre ideiglenes érték, terepi tapasztalat alapján finomítható.
   const LABEL_ZOOM = 16;
- 
+
   // Útátjáró-csoportosítás: ilyen távolságon belüli level_crossing node-okat
   // egy logikai objektumként kezelünk (a legszélesebb, 4 vágányos átjáró ~25 m).
   const CROSSING_GROUP_RADIUS_M = 30;
- 
+
   // ============================================================
   // FIGYELT VONALAK ÉS ÜZEMELTETŐ
   // A vonalak.json külön fájlból töltődik be induláskor (lásd inditas),
@@ -120,7 +151,7 @@
     { nev: '120a (Budapest–Szolnok)', relation: 252069, aktiv: true },
     { nev: '82 (Hatvan–Újszász)', relation: 77374, aktiv: true }
   ];
- 
+
   // ============================================================
   // TÍPUSDEFINÍCIÓK
   // (Ez a blokk később egy külön konfiguracio.json fájlba kerül majd ki.)
@@ -137,7 +168,7 @@
         // de amíg a meglévő oszlopok name=-ben vannak, mindkettőt kezeljük.
         const idRaw = t.ref || t.name;
         const idPart = idRaw ? `<span class="label-id">${escapeHtml(idRaw)}</span>` : '';
- 
+
         // Leíró adatok — típus + aktív logikai jelzők, második színnel.
         // Ezek egyelőre saját (nem hivatalos OSM) mezők, a nevük még finomítható,
         // amint elkészül az adatlap és eldől a tényleges tag-elnevezés.
@@ -150,7 +181,7 @@
         const descPart = descBits.length > 0
           ? `<span class="label-desc">${descBits.join(' ')}</span>`
           : '';
- 
+
         if (!idPart && !descPart) return null;
         return idPart + descPart;
       }
@@ -195,7 +226,7 @@
     }
   ];
   // Egyelőre rejtve: railway=switch / signal / station / halt / stop / junction / radio stb.
- 
+
   // ============================================================
   // MAGYAR FORDÍTÁSI SZÓTÁR
   // (Ez a blokk is a későbbi konfiguracio.json-ba kerül majd ki.)
@@ -208,7 +239,7 @@
     'icon', 'icon-color', 'icon-opacity', 'icon-scale', 'icon-offset',
     'icon-offset-units', 'label-scale', 'styleUrl'
   ]);
- 
+
   const MEZO_FORDITAS = {
     railway: 'Típus (railway)',
     power: 'Típus (power)',
@@ -257,18 +288,18 @@
     'addr:postcode': 'Irányítószám',
     '@id': 'OSM azonosító'
   };
- 
+
   const ERTEK_FORDITAS = {
     railway: { milestone: 'Szelvénykő', level_crossing: 'Útátjáró', switch: 'Kitérő', signal: 'Jelző', station: 'Állomás', halt: 'Megállóhely', stop: 'Megálló', junction: 'Csomópont' },
     power: { catenary_mast: 'Felsővezeték-oszlop' },
     crossing: { uncontrolled: 'Jelzés nélküli', traffic_signals: 'Fénysorompós', no_signals: 'Jelzés nélküli' },
     'crossing:barrier': { full: 'Teljes sorompó', half: 'Fél sorompó', no: 'Nincs sorompó' }
   };
- 
+
   function magyarMezonev(kulcs) {
     return MEZO_FORDITAS[kulcs] || kulcs;
   }
- 
+
   function magyarErtek(kulcs, ertek) {
     if (ertek === 'yes') return 'igen';
     if (ertek === 'no') return 'nem';
@@ -276,7 +307,7 @@
     if (tablazat && tablazat[ertek]) return tablazat[ertek];
     return ertek;
   }
- 
+
   // Oszlop-típusbetűjel → a majdani mentéskor felírandó OSM-mezők.
   // Egyelőre csak adatmodell, a tényleges OSM-írás a 2. (GitHub Pages-es) fázisban készül el.
   const TIPUS_LEKEPEZES = {
@@ -293,13 +324,13 @@
     // A "C" végződés (tőcsavaros kivitel) és a fa segédoszlop (szám végi "F")
     // az adatlap elkészültekor kap majd saját mezőt/kiegészítő logikát.
   };
- 
+
   function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, c => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[c]));
   }
- 
+
   // --- Cluster-csoportok, típusonként külön ---
   const clusterGroups = {};
   TYPES.forEach(type => {
@@ -322,7 +353,7 @@
       clusterGroups[type.key].addTo(map);
     }
   });
- 
+
   function makeIcon(color, shape) {
     const shapeClass = shape === 'diamond' ? 'diamond' : (shape === 'cross' ? 'cross' : '');
     const inner = shape === 'diamond' ? 'width:12px; height:12px;' : 'width:14px; height:14px;';
@@ -332,23 +363,40 @@
       iconSize: [14, 14]
     });
   }
- 
-  function popupContent(tags) {
+
+  function popupContent(tags, type) {
     const rows = Object.entries(tags)
-      .filter(([k]) => !REJTETT_MEZOK.has(k))
+      .filter(([k]) => !REJTETT_MEZOK.has(k) && k !== '_vonal')
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, v]) => `<tr><td>${escapeHtml(magyarMezonev(k))}</td><td>${escapeHtml(magyarErtek(k, v))}</td></tr>`)
       .join('');
-    return `<table class="popup-table">${rows}</table>`;
+
+    // Szerkesztés gomb — egyelőre csak oszlophoz van kész adatlap-séma.
+    // A tagek base64-kódolva mennek át URL-paraméterben az adatlap_teszt.html-nek,
+    // ami induláskor ebből próbálja előtölteni a mezőket (legjobb-erőfeszítés, nem tökéletes).
+    let szerkesztoGomb = '';
+    if (type && type.key === 'oszlop') {
+      const tisztaTagek = { ...tags };
+      delete tisztaTagek._vonal;
+      const kodolt = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(tisztaTagek)))));
+      szerkesztoGomb = `<div style="margin-top:8px;">
+        <button onclick="window.open('adatlap_teszt.html?tagek=${kodolt}', '_blank')"
+                style="font-size:13px; padding:4px 10px; border:1px solid #ccc; border-radius:4px; background:#f0f0f0; cursor:pointer;">
+          Szerkesztés
+        </button>
+      </div>`;
+    }
+
+    return `<table class="popup-table">${rows}</table>${szerkesztoGomb}`;
   }
- 
+
   function classify(tags) {
     for (const type of TYPES) {
       if (type.test(tags)) return type;
     }
     return null;
   }
- 
+
   // --- Haversine távolság méterben ---
   function distanceM(lat1, lon1, lat2, lon2) {
     const R = 6371000;
@@ -359,7 +407,7 @@
       Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
     return R * 2 * Math.asin(Math.sqrt(a));
   }
- 
+
   // --- Közeli, azonos típusú pontok csoportosítása (pl. útátjárók vágányonként) ---
   function groupPoints(points, radiusM) {
     const groups = [];
@@ -378,88 +426,97 @@
     });
     return groups;
   }
- 
+
   // --- Réteg-választó: alaptérkép + elemtípusok ---
   const layerControl = L.control.layers(
     { 'OpenStreetMap': osmLayer, 'Műholdas (Esri)': satelliteLayer },
     {}, { collapsed: false, position: 'topright' }
   ).addTo(map);
   TYPES.forEach(type => layerControl.addOverlay(clusterGroups[type.key], type.label));
- 
-  function addMarker(type, lat, lon, tags, memberCount) {
-    const marker = L.marker([lat, lon], { icon: makeIcon(type.color, type.shape) });
-    marker.bindPopup(popupContent(tags));
+
+  function addMarker(type, lat, lon, tags, memberCount, feature) {
+    const marker = L.marker([lat, lon], { icon: makeIcon(type.color, type.shape), draggable: szerkesztoiMod });
+    marker.bindPopup(popupContent(tags, type));
     const labelHtml = type.buildLabelHtml(tags);
     if (labelHtml) {
       marker.bindTooltip(labelHtml, {
         permanent: true, direction: 'right', offset: [8, 0], className: 'mav-label'
       });
     }
+
+    // Húzással áthelyezhető, DE csak szerkesztői módban — mezei (néző) felhasználó nem tudja
+    // elmozdítani. Egyelőre csak a böngésző memóriájában/a "Mentés adatok.geojson-ként"
+    // exportban frissül a pozíció, élő OSM-írás még nincs bekötve (2. fázis).
+    marker.on('dragend', () => {
+      const pos = marker.getLatLng();
+      if (feature && feature.geometry) {
+        feature.geometry.coordinates = [pos.lng, pos.lat];
+      }
+      console.info('Elem áthelyezve (csak helyben, OSM-re még nincs visszaírva):', tags.ref || tags.name || '(?)', pos);
+    });
+
+    osszesMarker.push(marker);
     clusterGroups[type.key].addLayer(marker);
   }
- 
+
+
   function loadGeoJSON(geojson) {
     TYPES.forEach(t => clusterGroups[t.key].clearLayers());
+    osszesMarker.length = 0;
     const counts = {};
     TYPES.forEach(t => counts[t.key] = 0);
- 
+
     // Elsőként típusonként szétválogatjuk a pontokat.
     const byType = {};
     TYPES.forEach(t => byType[t.key] = []);
- 
+
     geojson.features.forEach(f => {
       if (!f.geometry || f.geometry.type !== 'Point' || !f.properties) return;
       const tags = f.properties;
       const type = classify(tags); // az "egyeb" gyűjtőtípus miatt ez sosem null
       const [lon, lat] = f.geometry.coordinates;
-      byType[type.key].push({ lat, lon, tags });
+      byType[type.key].push({ lat, lon, tags, feature: f });
     });
- 
+
     TYPES.forEach(type => {
       const points = byType[type.key];
       if (type.groupRadiusM) {
         // Csoportosítandó típus (pl. útátjáró): közeli pontokat összevonjuk.
         const groups = groupPoints(points, type.groupRadiusM);
         groups.forEach(g => {
-          addMarker(type, g.lat, g.lon, g.members[0].tags, g.members.length);
+          addMarker(type, g.lat, g.lon, g.members[0].tags, g.members.length, g.members[0].feature);
           counts[type.key]++;
         });
       } else {
         points.forEach(p => {
-          addMarker(type, p.lat, p.lon, p.tags);
+          addMarker(type, p.lat, p.lon, p.tags, undefined, p.feature);
           counts[type.key]++;
         });
       }
     });
- 
+
     const summary = TYPES.map(t => `${t.label}: ${counts[t.key]}`).join(' · ');
     statusEl.textContent = `Betöltve — ${summary}`;
- 
+
     const allLayers = TYPES.map(t => clusterGroups[t.key]).filter(g => g.getLayers().length > 0);
     if (allLayers.length > 0) {
       const group = L.featureGroup(allLayers.flatMap(g => g.getLayers()));
       map.fitBounds(group.getBounds().pad(0.1));
     }
   }
- 
-  // Élő Overpass-lekérdezés: minden operator=MÁV elem az aktív vonalak 50 m-es körzetében.
-  // Az útátjárók mostantól szintén MÁV-tagelve vannak, ezért egy egységes szűrés is elég —
-  // nincs szükség a korábbi külön railway=level_crossing ágra.
-  function buildOverpassQuery() {
-    const aktivVonalak = VONALAK.filter(v => v.aktiv);
-    const relSorok = aktivVonalak
-      .map((v, i) => `rel(${v.relation}); way(r)->.w${i};`)
-      .join('\n    ');
-    const osszefuzes = aktivVonalak.map((v, i) => `.w${i};`).join(' ');
+
+  // Élő Overpass-lekérdezés VONALANKÉNT (nem összevonva) — ez teszi lehetővé, hogy a
+  // "Figyelt vonalak" pipálás utólag, hálózati kérés nélkül tudjon szűrni, még akkor is,
+  // ha két vonal fizikailag átfedi egymást (pl. egy csomópontnál).
+  function buildOverpassQueryForLine(line) {
     return `
       [out:json][timeout:180];
-      ${relSorok}
-      (${osszefuzes}) -> .vonalak;
-      node(around.vonalak:50)["operator"="${UZEMELTETO}"]->.elemek;
+      rel(${line.relation}); way(r)->.w;
+      node(around.w:50)["operator"="${UZEMELTETO}"]->.elemek;
       .elemek out body;
     `;
   }
- 
+
   // Több Overpass-tükör, sorban kipróbálva — ha az egyik hibázik vagy időtúllépést ad,
   // a következővel próbálkozunk. Ha egyik sem válaszol időben, a .html mellé tett
   // helyi GeoJSON-fájlra esik vissza (adatok.geojson), hogy gyenge/nincs neten is működjön.
@@ -469,7 +526,7 @@
   ];
   const OVERPASS_TIMEOUT_MS = 25000; // egy-egy tükörre max ennyit várunk
   const LOCAL_SNAPSHOT_PATH = './adatok.geojson';
- 
+
   async function fetchWithTimeout(url, options, timeoutMs) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -479,7 +536,7 @@
       clearTimeout(timer);
     }
   }
- 
+
   async function fetchOverpassWithFallback(query) {
     if (!navigator.onLine) {
       throw new Error('Nincs internetkapcsolat, helyi fájlra váltás.');
@@ -501,63 +558,102 @@
     }
     throw lastError || new Error('Ismeretlen hiba az Overpass-lekérdezés közben.');
   }
- 
-  function overpassToGeoJSON(data) {
-    return {
-      type: 'FeatureCollection',
-      features: data.elements
-        .filter(el => el.type === 'node')
-        .map(el => ({
-          type: 'Feature',
-          properties: el.tags || {},
-          geometry: { type: 'Point', coordinates: [el.lon, el.lat] }
-        }))
-    };
+
+  function overpassToGeoJSON(data, vonalNev) {
+    return data.elements
+      .filter(el => el.type === 'node')
+      .map(el => ({
+        type: 'Feature',
+        properties: { ...(el.tags || {}), _vonal: vonalNev },
+        geometry: { type: 'Point', coordinates: [el.lon, el.lat] }
+      }));
   }
- 
+
   async function loadLocalSnapshot() {
     statusEl.textContent = 'Helyi adatfájl betöltése (adatok.geojson)...';
     const res = await fetch(LOCAL_SNAPSHOT_PATH);
     if (!res.ok) throw new Error(`Helyi fájl sem elérhető (HTTP ${res.status})`);
     return await res.json();
   }
- 
+
+  // A ténylegesen megjelenő adatot az aktív vonalak alapján, hálózati kérés nélkül állítja
+  // elő az osszesFeature-ből — ezt hívja a checkbox-pipálás is.
+  function alkalmazSzurokEsRajzol() {
+    const aktivNevek = new Set(VONALAK.filter(v => v.aktiv).map(v => v.nev));
+    // Ha egy elemen nincs _vonal jelölés (pl. régebbi, a vonalankénti lekérés előtti mentésből
+    // származik), biztonságból megjelenítjük — jobb, mint véletlenül eltüntetni valamit.
+    const szurt = osszesFeature.filter(f => !f.properties._vonal || aktivNevek.has(f.properties._vonal));
+    loadGeoJSON({ type: 'FeatureCollection', features: szurt });
+  }
+
   async function betoltesIndul() {
+    const letoltendok = VONALAK.filter(v => v.aktiv && !letoltottVonalak.has(v.nev));
+    if (letoltendok.length === 0) {
+      alkalmazSzurokEsRajzol();
+      statusEl.textContent = 'Nincs új letöltendő vonal — válaszd ki a kívánt vonalakat, majd nyomd meg az "Adatok letöltése" gombot.';
+      statusEl.style.color = '#555';
+      return;
+    }
+
     statusEl.style.color = '';
-    try {
-      const data = await fetchOverpassWithFallback(buildOverpassQuery());
-      const geojson = overpassToGeoJSON(data);
-      loadGeoJSON(geojson);
-      statusEl.textContent += ' (élő adat)';
- 
-      // Sikeres élő betöltés után felkínáljuk, hogy ez legyen az új helyi mentés is —
-      // a böngésző biztonsági okból nem írhat csendben a lemezre, ezért ez egy
-      // egykattintásos letöltés, amit utána a repóba kell másolni.
-      const saveBtn = document.getElementById('saveSnapshotBtn');
-      saveBtn.style.display = 'block';
-      saveBtn.onclick = () => {
-        const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/geo+json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'adatok.geojson';
-        a.click();
-        URL.revokeObjectURL(url);
-      };
-    } catch (err) {
-      console.warn('Élő Overpass-adat nem elérhető, helyi fájlra váltás:', err);
+    statusEl.textContent = `Élő adat lekérése: ${letoltendok.map(v => v.nev).join(', ')}...`;
+    const eredmenyek = await Promise.allSettled(
+      letoltendok.map(line => fetchOverpassWithFallback(buildOverpassQueryForLine(line))
+        .then(data => overpassToGeoJSON(data, line.nev)))
+    );
+
+    const sikeres = [];
+    const sikertelenVonalak = [];
+    eredmenyek.forEach((eredmeny, i) => {
+      if (eredmeny.status === 'fulfilled') {
+        sikeres.push(...eredmeny.value);
+        letoltottVonalak.add(letoltendok[i].nev);
+      } else {
+        sikertelenVonalak.push(letoltendok[i].nev);
+        console.warn('Vonal betöltése sikertelen:', letoltendok[i].nev, eredmeny.reason);
+      }
+    });
+
+    if (sikeres.length === 0 && sikertelenVonalak.length > 0) {
+      // Egyetlen vonal sem jött be élőben — helyi fájlra esünk vissza.
+      console.warn('Egyik vonal sem tölthető be élőben, helyi fájlra váltás.');
       try {
         const geojson = await loadLocalSnapshot();
-        loadGeoJSON(geojson);
+        osszesFeature = geojson.features;
+        alkalmazSzurokEsRajzol();
         statusEl.textContent += ' (helyi mentett adat — nem feltétlenül friss!)';
         statusEl.style.color = '#b36b00';
       } catch (err2) {
         statusEl.textContent = 'Sem élő adat, sem helyi fájl nem elérhető: ' + err2.message;
         statusEl.style.color = 'red';
       }
+      return;
     }
+
+    osszesFeature = sikeres;
+    alkalmazSzurokEsRajzol();
+    statusEl.textContent += sikertelenVonalak.length > 0
+      ? ` (élő adat — de nem sikerült: ${sikertelenVonalak.join(', ')})`
+      : ' (élő adat)';
+    if (sikertelenVonalak.length > 0) statusEl.style.color = '#b36b00';
+
+    // Sikeres élő betöltés után felkínáljuk, hogy ez legyen az új helyi mentés is —
+    // a böngésző biztonsági okból nem írhat csendben a lemezre, ezért ez egy
+    // egykattintásos letöltés, amit utána a repóba kell másolni.
+    const saveBtn = document.getElementById('saveSnapshotBtn');
+    saveBtn.style.display = 'block';
+    saveBtn.onclick = () => {
+      const geojson = { type: 'FeatureCollection', features: osszesFeature };
+      const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/geo+json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'adatok.geojson';
+      a.click();
+      URL.revokeObjectURL(url);
+    };
   }
- 
+
   // --- Figyelt vonalak panel: pipálható lista, változtatáskor újratölti az adatot ---
   const vonalListaEl = document.getElementById('vonalLista');
   function vonalListaKirajzolas() {
@@ -580,11 +676,11 @@
           VONALAK[idx].aktiv = true;
           return;
         }
-        betoltesIndul();
+        alkalmazSzurokEsRajzol(); // csak szűrés a már betöltött adaton, nincs új hálózati kérés
       });
     });
   }
- 
+
   // Induláskor: előbb a vonalak.json betöltése, utána az adatlekérés.
   // Ha a fájl nem érhető el (pl. hiányzik, vagy hibás JSON), a beépített
   // alapértelmezett VONALAK-kal folytatjuk, csak jelezzük a státuszsávban.
@@ -600,10 +696,11 @@
       statusEl.textContent = 'Figyelmeztetés: vonalak.json nem tölthető be, beépített alapértelmezéssel indul.';
     }
     vonalListaKirajzolas();
-    betoltesIndul();
   }
   inditas();
- 
+
+  document.getElementById('adatokLetoltesBtn').addEventListener('click', betoltesIndul);
+
   // Kézi felülbírálás — bármikor használható, függetlenül attól, hogy az élő adat
   // "sikeresnek" tűnt-e (pl. ha egy Overpass-tükör hibás/hiányos, de HTTP 200-at ad vissza).
   document.getElementById('manualFileInput').addEventListener('change', (ev) => {
@@ -614,7 +711,9 @@
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        loadGeoJSON(JSON.parse(e.target.result));
+        const geojson = JSON.parse(e.target.result);
+        osszesFeature = geojson.features;
+        alkalmazSzurokEsRajzol();
         statusEl.textContent += ' (kézi fájlból)';
         statusEl.style.color = '#b36b00';
       } catch (err) {
@@ -627,4 +726,3 @@
 </script>
 </body>
 </html>
- 
