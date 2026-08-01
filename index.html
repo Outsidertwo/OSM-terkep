@@ -76,11 +76,18 @@
     Szerkesztői mód (elemek mozgatása)
   </label>
 </div>
+<div style="position:absolute; top:352px; left:50px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:14px;">
+  <div id="osmBejelentkezesAllapot" style="margin-bottom:6px; color:#555;">Nincs bejelentkezve az OSM-be.</div>
+  <button id="osmBejelentkezesBtn" style="padding:6px 12px; border-radius:4px; border:1px solid #ccc; background:#eef4ff; font-size:14px; cursor:pointer;">
+    Bejelentkezés OSM-mel
+  </button>
+</div>
 
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-locatecontrol/0.79.0/L.Control.Locate.min.js"></script>
+<script src="./osm_auth.js"></script>
 <script>
   const map = L.map('map').setView([47.35, 19.85], 10);
 
@@ -700,6 +707,28 @@
   inditas();
 
   document.getElementById('adatokLetoltesBtn').addEventListener('click', betoltesIndul);
+
+  // --- OSM bejelentkezés (OAuth2 + PKCE) ---
+  async function osmBejelentkezesAllapotFrissit() {
+    const allapotEl = document.getElementById('osmBejelentkezesAllapot');
+    const btn = document.getElementById('osmBejelentkezesBtn');
+    if (!osmAuth.tokenVan()) {
+      allapotEl.textContent = 'Nincs bejelentkezve az OSM-be.';
+      btn.textContent = 'Bejelentkezés OSM-mel';
+      btn.onclick = () => osmAuth.bejelentkezes();
+      return;
+    }
+    allapotEl.textContent = 'Bejelentkezve — adatok lekérdezése...';
+    btn.textContent = 'Kijelentkezés';
+    btn.onclick = () => { osmAuth.kijelentkezes(); osmBejelentkezesAllapotFrissit(); };
+    try {
+      const felhasznalo = await osmAuth.sajatAdatok();
+      allapotEl.textContent = 'Bejelentkezve mint: ' + felhasznalo.display_name;
+    } catch (err) {
+      allapotEl.textContent = 'Bejelentkezve, de a felhasználói adatok lekérdezése sikertelen: ' + err.message;
+    }
+  }
+  osmAuth.visszaterasFeldolgozasa().then(() => osmBejelentkezesAllapotFrissit());
 
   // Kézi felülbírálás — bármikor használható, függetlenül attól, hogy az élő adat
   // "sikeresnek" tűnt-e (pl. ha egy Overpass-tükör hibás/hiányos, de HTTP 200-at ad vissza).
