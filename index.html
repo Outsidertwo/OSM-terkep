@@ -373,10 +373,20 @@
 
   function popupContent(tags, type) {
     const rows = Object.entries(tags)
-      .filter(([k]) => !REJTETT_MEZOK.has(k) && k !== '_vonal')
+      .filter(([k]) => !REJTETT_MEZOK.has(k) && k !== '_vonal' && k !== '_osm_id')
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, v]) => `<tr><td>${escapeHtml(magyarMezonev(k))}</td><td>${escapeHtml(magyarErtek(k, v))}</td></tr>`)
       .join('');
+
+    // Az OSM node saját azonosítója — nem tag, hanem az elem saját id-ja; külön, jól
+    // látható sorban jelenítjük meg, hogy pl. az OSM-feltöltés teszthez könnyen kéznél legyen.
+    let osmIdSor = '';
+    if (tags._osm_id) {
+      osmIdSor = `<div style="font-size:12px; color:#888; margin-bottom:4px;">
+        OSM node ID: <b>${escapeHtml(tags._osm_id)}</b>
+        (<a href="https://www.openstreetmap.org/node/${escapeHtml(tags._osm_id)}" target="_blank">megnyitás</a>)
+      </div>`;
+    }
 
     // Szerkesztés gomb — egyelőre csak oszlophoz van kész adatlap-séma.
     // A tagek base64-kódolva mennek át URL-paraméterben az adatlap_teszt.html-nek,
@@ -385,6 +395,7 @@
     if (type && type.key === 'oszlop') {
       const tisztaTagek = { ...tags };
       delete tisztaTagek._vonal;
+      delete tisztaTagek._osm_id;
       const kodolt = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(tisztaTagek)))));
       szerkesztoGomb = `<div style="margin-top:8px;">
         <button onclick="window.open('adatlap_teszt.html?tagek=${kodolt}', '_blank')"
@@ -394,7 +405,7 @@
       </div>`;
     }
 
-    return `<table class="popup-table">${rows}</table>${szerkesztoGomb}`;
+    return `${osmIdSor}<table class="popup-table">${rows}</table>${szerkesztoGomb}`;
   }
 
   function classify(tags) {
@@ -571,7 +582,7 @@
       .filter(el => el.type === 'node')
       .map(el => ({
         type: 'Feature',
-        properties: { ...(el.tags || {}), _vonal: vonalNev },
+        properties: { ...(el.tags || {}), _vonal: vonalNev, _osm_id: el.id },
         geometry: { type: 'Point', coordinates: [el.lon, el.lat] }
       }));
   }
