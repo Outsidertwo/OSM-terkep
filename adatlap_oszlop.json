@@ -12,14 +12,6 @@
       "megjegyzes": "5 számjegy, opcionálisan /1 vagy /2, vagy max. 2 kis/nagybetű toldalék",
       "osm": { "ref": "{ertek}" }
     },
-    {
-      "kod": "fa_oszlop",
-      "nev": "Fa oszlop (F jelölés a szám végén)",
-      "tipus": "checkbox",
-      "terkepen": false,
-      "megjegyzes": "Ha igaz, az oszlopszám végére F kerül (pl. 05617F). Ez nem azonos a Feszítő (F) típuskóddal.",
-      "osm": { "structure": "trunk" }
-    },
 
     {
       "kod": "sulyos",
@@ -73,6 +65,17 @@
       "kizarja": ["sulyos"],
       "megjegyzes": "Nincs hozzá hivatalos OSM-tag, saját mező marad.",
       "osm": null
+    },
+    {
+      "kod": "foldeles",
+      "nev": "Földelés",
+      "tipus": "radio",
+      "terkepen": true,
+      "megjegyzes": "Nincs hozzá hivatalos OSM-tag, saját mező marad. A térképi címkén H (hosszú) vagy R (rövid) betűvel jelenik meg.",
+      "opciok": [
+        { "kod": "hosszu", "nev": "Hosszú" },
+        { "kod": "rovid", "nev": "Rövid" }
+      ]
     },
     {
       "kod": "foldelesi_pont",
@@ -142,6 +145,14 @@
       "tipus": "checkbox",
       "terkepen": false,
       "megjegyzes": "A típuskódhoz C toldalékot ad (pl. KC)."
+    },
+    {
+      "kod": "fa_oszlop",
+      "nev": "Fa oszlop (F jelölés a szám végén)",
+      "tipus": "checkbox",
+      "terkepen": false,
+      "megjegyzes": "Ha igaz, az oszlopszám végére F kerül (pl. 05617F). Ez nem azonos a Feszítő (F) típuskóddal.",
+      "osm": { "structure": "trunk" }
     },
 
     {
