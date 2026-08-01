@@ -398,7 +398,7 @@
       delete tisztaTagek._osm_id;
       const kodolt = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(tisztaTagek)))));
       szerkesztoGomb = `<div style="margin-top:8px;">
-        <button onclick="window.open('adatlap_teszt.html?tagek=${kodolt}', '_blank')"
+        <button onclick="window.open('adatlap.html?tagek=${kodolt}', '_blank')"
                 style="font-size:13px; padding:4px 10px; border:1px solid #ccc; border-radius:4px; background:#f0f0f0; cursor:pointer;">
           Szerkesztés
         </button>

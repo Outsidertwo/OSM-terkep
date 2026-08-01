@@ -570,7 +570,26 @@
     return osszegyujtOsmTageket();
   };
 
-  betoltSchema();
+  async function urlParameterbolElotolt() {
+    const parameterek = new URLSearchParams(window.location.search);
+    const kodolt = parameterek.get('tagek');
+    if (!kodolt) return;
+    let tagek;
+    try {
+      tagek = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(kodolt)))));
+    } catch (err) {
+      console.warn('Nem sikerült értelmezni a ?tagek= URL-paramétert:', err);
+      return;
+    }
+    const nevSzoveg = tagek.name || tagek.ref;
+    if (!nevSzoveg) return;
+    const nevMezoBemenetEl = document.getElementById('nevMezoBemenet');
+    if (nevMezoBemenetEl) nevMezoBemenetEl.value = nevSzoveg;
+    const eredmeny = ertelmezCimkeSzoveget(nevSzoveg);
+    alkalmazFeszitesiTervEredmenyt(eredmeny);
+  }
+
+  betoltSchema().then(urlParameterbolElotolt);
 
   const feszitesiTervBeolvasBtnEl = document.getElementById('feszitesiTervBeolvasBtn');
   if (feszitesiTervBeolvasBtnEl) {
