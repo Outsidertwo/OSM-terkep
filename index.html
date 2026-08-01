@@ -53,7 +53,7 @@
 </head>
 <body>
 <div id="map"></div>
-<div id="status">Adatok betöltése az Overpass API-ból...</div>
+<div id="status">Válaszd ki a letöltendő vonalakat lent, majd nyomd meg az "Adatok letöltése" gombot.</div>
 <button id="saveSnapshotBtn" style="display:none; position:absolute; top:54px; left:50px; z-index:1000; padding:6px 12px; border-radius:4px; border:1px solid #ccc; background:white; font-size:14px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.4);">
   Mentés adatok.geojson-ként
 </button>
@@ -70,18 +70,6 @@
   <summary style="cursor:pointer; font-weight:bold;">Figyelt vonalak</summary>
   <div id="vonalLista" style="margin-top:6px;"></div>
 </details>
-<div style="position:absolute; top:308px; left:50px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:14px;">
-  <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-    <input type="checkbox" id="szerkesztoiModKapcsolo" />
-    Szerkesztői mód (elemek mozgatása)
-  </label>
-</div>
-<div style="position:absolute; top:352px; left:50px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:14px;">
-  <div id="osmBejelentkezesAllapot" style="margin-bottom:6px; color:#555;">Nincs bejelentkezve az OSM-be.</div>
-  <button id="osmBejelentkezesBtn" style="padding:6px 12px; border-radius:4px; border:1px solid #ccc; background:#eef4ff; font-size:14px; cursor:pointer;">
-    Bejelentkezés OSM-mel
-  </button>
-</div>
 
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -90,6 +78,10 @@
 <script src="./osm_auth.js"></script>
 <script>
   const map = L.map('map').setView([47.35, 19.85], 10);
+
+  // Igaz, ha a felhasználó be van jelentkezve OSM-mel — ettől függ, hogy a popupban
+  // megjelenik-e a Szerkesztés/Mozgatás gomb.
+  let osmSzerkesztesEngedelyezve = false;
 
   // --- Alaptérkép réteg-választó (OSM standard / műholdas) ---
   const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -118,6 +110,46 @@
   // --- GPS gomb ---
   L.control.locate({ position: 'topleft', strings: { title: 'Saját pozícióm' }, flyTo: true }).addTo(map);
 
+  // --- Kompakt OSM bejelentkezés-gomb (a GPS gomb alá kerül) ---
+  const OsmBejelentkezesControl = L.Control.extend({
+    options: { position: 'topleft' },
+    onAdd: function () {
+      const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+      const a = L.DomUtil.create('a', '', div);
+      a.href = '#';
+      a.style.fontSize = '16px';
+      a.style.display = 'flex';
+      a.style.alignItems = 'center';
+      a.style.justifyContent = 'center';
+      L.DomEvent.disableClickPropagation(div);
+      L.DomEvent.on(a, 'click', (ev) => { L.DomEvent.preventDefault(ev); a.onOsmClick(); });
+      this._link = a;
+      return div;
+    }
+  });
+  const osmBejelentkezesControl = new OsmBejelentkezesControl().addTo(map);
+  const osmBejelentkezesLink = osmBejelentkezesControl._link;
+
+  function osmBejelentkezesAllapotFrissit() {
+    if (!osmAuth.tokenVan()) {
+      osmBejelentkezesLink.textContent = '🔒';
+      osmBejelentkezesLink.title = 'Bejelentkezés OSM-mel';
+      osmBejelentkezesLink.onOsmClick = () => osmAuth.bejelentkezes();
+      osmSzerkesztesEngedelyezve = false;
+      return;
+    }
+    osmBejelentkezesLink.textContent = '🔓';
+    osmBejelentkezesLink.title = 'Bejelentkezve — kattints a kijelentkezéshez';
+    osmBejelentkezesLink.onOsmClick = () => {
+      osmAuth.kijelentkezes();
+      location.reload(); // hogy a már megnyitott popupokból is eltűnjön a Szerkesztés/Mozgatás gomb
+    };
+    osmSzerkesztesEngedelyezve = true;
+    osmAuth.sajatAdatok()
+      .then(u => { osmBejelentkezesLink.title = 'Bejelentkezve mint: ' + u.display_name + ' — kattints a kijelentkezéshez'; })
+      .catch(() => { /* a gomb ekkor is működik, csak a névvel nem tudunk kiegészülni */ });
+  }
+
   const statusEl = document.getElementById('status');
 
   // A vonalanként (élőben) letöltött, összes elem — ebből szűr a "Figyelt vonalak" panel,
@@ -126,18 +158,7 @@
   let osszesFeature = [];
   const letoltottVonalak = new Set();
 
-  // Szerkesztői mód — csak ekkor mozgathatók az elemek. FONTOS: ez egyelőre csak felületi
-  // kapcsoló, nem valódi jogosultságkezelés (bárki bepipálhatja) — a tényleges védelem majd
-  // a token-alapú beléptetéssel készül el a 2. fázisban.
-  let szerkesztoiMod = false;
-  const osszesMarker = []; // minden létrehozott marker, hogy a mód váltásakor egyben tudjuk (de)aktiválni a húzást
-  document.getElementById('szerkesztoiModKapcsolo').addEventListener('change', (ev) => {
-    szerkesztoiMod = ev.target.checked;
-    osszesMarker.forEach(m => {
-      if (szerkesztoiMod) m.dragging.enable();
-      else m.dragging.disable();
-    });
-  });
+  const osszesMarker = []; // minden létrehozott marker, hogy szükség esetén elérhetők legyenek
 
   // A zoomszint, ami felett a clusterek egyedi pontokra bomlanak és a címkék megjelennek.
   // Egyelőre ideiglenes érték, terepi tapasztalat alapján finomítható.
@@ -244,7 +265,8 @@
   // is hozzáadja a stílus alapján — ezek a popupban csak zajt jelentenének, kiszűrjük.
   const REJTETT_MEZOK = new Set([
     'icon', 'icon-color', 'icon-opacity', 'icon-scale', 'icon-offset',
-    'icon-offset-units', 'label-scale', 'styleUrl'
+    'icon-offset-units', 'label-scale', 'styleUrl',
+    'operator', 'operator:wikidata', 'power'
   ]);
 
   const MEZO_FORDITAS = {
@@ -388,24 +410,27 @@
       </div>`;
     }
 
-    // Szerkesztés gomb — egyelőre csak oszlophoz van kész adatlap-séma.
-    // A tagek base64-kódolva mennek át URL-paraméterben az adatlap_teszt.html-nek,
-    // ami induláskor ebből próbálja előtölteni a mezőket (legjobb-erőfeszítés, nem tökéletes).
-    let szerkesztoGomb = '';
-    if (type && type.key === 'oszlop') {
+    // Szerkesztés + Mozgatás gomb — csak bejelentkezve (mivel csak akkor tudnánk menteni
+    // is az eredményt), és egyelőre csak oszlophoz van kész adatlap-séma/mozgatás-logika.
+    let gombok = '';
+    if (osmSzerkesztesEngedelyezve && type && type.key === 'oszlop' && tags._osm_id) {
       const tisztaTagek = { ...tags };
       delete tisztaTagek._vonal;
       delete tisztaTagek._osm_id;
       const kodolt = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(tisztaTagek)))));
-      szerkesztoGomb = `<div style="margin-top:8px;">
+      gombok = `<div style="margin-top:8px; display:flex; gap:6px;">
         <button onclick="window.open('adatlap.html?tagek=${kodolt}', '_blank')"
                 style="font-size:13px; padding:4px 10px; border:1px solid #ccc; border-radius:4px; background:#f0f0f0; cursor:pointer;">
           Szerkesztés
         </button>
+        <button class="mozgatas-gomb"
+                style="font-size:13px; padding:4px 10px; border:1px solid #ccc; border-radius:4px; background:#f0f0f0; cursor:pointer;">
+          Mozgatás
+        </button>
       </div>`;
     }
 
-    return `${osmIdSor}<table class="popup-table">${rows}</table>${szerkesztoGomb}`;
+    return `${osmIdSor}<table class="popup-table">${rows}</table>${gombok}`;
   }
 
   function classify(tags) {
@@ -452,9 +477,57 @@
   ).addTo(map);
   TYPES.forEach(type => layerControl.addOverlay(clusterGroups[type.key], type.label));
 
+  function mozgatasModValt(marker, tags) {
+    const eredetiLatLng = marker.getLatLng();
+    marker.dragging.enable();
+    marker.setPopupContent(`
+      <div style="font-size:14px;">
+        Húzd az objektumot az új helyére, majd nyomd meg a Pozíció mentése gombot.
+      </div>
+      <div id="mozgatasHiba" style="color:#c0392b; font-size:13px; margin-top:6px;"></div>
+      <div style="margin-top:8px; display:flex; gap:6px;">
+        <button class="poz-mentes-gomb" style="font-size:13px; padding:4px 10px; border:1px solid #ccc; border-radius:4px; background:#eef4ff; cursor:pointer;">
+          Pozíció mentése
+        </button>
+        <button class="poz-megse-gomb" style="font-size:13px; padding:4px 10px; border:1px solid #ccc; border-radius:4px; background:#f0f0f0; cursor:pointer;">
+          Mégse
+        </button>
+      </div>
+    `);
+    const popupEl = marker.getPopup().getElement();
+    popupEl.querySelector('.poz-megse-gomb').addEventListener('click', () => {
+      marker.setLatLng(eredetiLatLng);
+      marker.dragging.disable();
+      marker.setPopupContent(popupContent(tags, classify(tags)));
+    });
+    popupEl.querySelector('.poz-mentes-gomb').addEventListener('click', async (ev) => {
+      const btn = ev.currentTarget;
+      const hibaEl = popupEl.querySelector('#mozgatasHiba');
+      btn.disabled = true;
+      btn.textContent = 'Mentés folyamatban...';
+      const ujPoz = marker.getLatLng();
+      try {
+        await osmSzerkesztes.nodeFeltoltese(
+          tags._osm_id, {}, 'Felsővezeték-oszlop pozíciójának pontosítása',
+          { lat: ujPoz.lat, lon: ujPoz.lng }
+        );
+        marker.dragging.disable();
+        marker.setPopupContent(popupContent(tags, classify(tags)));
+      } catch (err) {
+        hibaEl.textContent = 'Hiba a mentés közben: ' + err.message;
+        btn.disabled = false;
+        btn.textContent = 'Pozíció mentése';
+      }
+    });
+  }
+
   function addMarker(type, lat, lon, tags, memberCount, feature) {
-    const marker = L.marker([lat, lon], { icon: makeIcon(type.color, type.shape), draggable: szerkesztoiMod });
+    const marker = L.marker([lat, lon], { icon: makeIcon(type.color, type.shape), draggable: false });
     marker.bindPopup(popupContent(tags, type));
+    marker.on('popupopen', (ev) => {
+      const mozgatasBtn = ev.popup.getElement().querySelector('.mozgatas-gomb');
+      if (mozgatasBtn) mozgatasBtn.addEventListener('click', () => mozgatasModValt(marker, tags));
+    });
     const labelHtml = type.buildLabelHtml(tags);
     if (labelHtml) {
       marker.bindTooltip(labelHtml, {
@@ -719,26 +792,6 @@
 
   document.getElementById('adatokLetoltesBtn').addEventListener('click', betoltesIndul);
 
-  // --- OSM bejelentkezés (OAuth2 + PKCE) ---
-  async function osmBejelentkezesAllapotFrissit() {
-    const allapotEl = document.getElementById('osmBejelentkezesAllapot');
-    const btn = document.getElementById('osmBejelentkezesBtn');
-    if (!osmAuth.tokenVan()) {
-      allapotEl.textContent = 'Nincs bejelentkezve az OSM-be.';
-      btn.textContent = 'Bejelentkezés OSM-mel';
-      btn.onclick = () => osmAuth.bejelentkezes();
-      return;
-    }
-    allapotEl.textContent = 'Bejelentkezve — adatok lekérdezése...';
-    btn.textContent = 'Kijelentkezés';
-    btn.onclick = () => { osmAuth.kijelentkezes(); osmBejelentkezesAllapotFrissit(); };
-    try {
-      const felhasznalo = await osmAuth.sajatAdatok();
-      allapotEl.textContent = 'Bejelentkezve mint: ' + felhasznalo.display_name;
-    } catch (err) {
-      allapotEl.textContent = 'Bejelentkezve, de a felhasználói adatok lekérdezése sikertelen: ' + err.message;
-    }
-  }
   osmAuth.visszaterasFeldolgozasa().then(() => osmBejelentkezesAllapotFrissit());
 
   // Kézi felülbírálás — bármikor használható, függetlenül attól, hogy az élő adat

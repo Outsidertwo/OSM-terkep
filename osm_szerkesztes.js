@@ -95,16 +95,17 @@ const osmSzerkesztes = (function () {
 
   // Magas szintű, egylépéses függvény: nyit egy changesetet, lekéri a node jelenlegi
   // állapotát, belefésüli az ujTagek-ben megadott kulcsokat (a node MEGLÉVŐ, itt nem
-  // említett tagjei érintetlenül maradnak), visszaküldi a node-ot, majd lezárja a
-  // changesetet. Visszaadja az eredmény összefoglalóját.
-  async function nodeFeltoltese(nodeId, ujTagek, megjegyzes) {
+  // említett tagjei érintetlenül maradnak), opcionálisan felülírja a koordinátáit is
+  // (ujKoordinata = {lat, lon}, ha meg van adva — pl. mozgatáskor), visszaküldi a
+  // node-ot, majd lezárja a changesetet. Visszaadja az eredmény összefoglalóját.
+  async function nodeFeltoltese(nodeId, ujTagek, megjegyzes, ujKoordinata) {
     const changesetId = await changesetMegnyitasa(megjegyzes);
     try {
       const jelenlegi = await nodeLekerdezese(nodeId);
       const osszefesultTagek = { ...jelenlegi.tagek, ...ujTagek };
-      const ujVerzio = await nodeFrissitese(
-        nodeId, changesetId, jelenlegi.verzio, jelenlegi.lat, jelenlegi.lon, osszefesultTagek
-      );
+      const lat = ujKoordinata ? ujKoordinata.lat : jelenlegi.lat;
+      const lon = ujKoordinata ? ujKoordinata.lon : jelenlegi.lon;
+      const ujVerzio = await nodeFrissitese(nodeId, changesetId, jelenlegi.verzio, lat, lon, osszefesultTagek);
       await changesetLezarasa(changesetId);
       return {
         changesetId,
