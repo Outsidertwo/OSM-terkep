@@ -13,7 +13,7 @@
 const osmAuth = (function () {
   const CLIENT_ID = '8xg7oyYlOaJHoQLpx5-O43MLhskz-SlkE14p5YmvJ2o';
   const REDIRECT_URI = 'https://outsidertwo.github.io/OSM-terkep/';
-  const SCOPE = 'write_api openid';
+  const SCOPE = 'write_api openid read_prefs';
   const AUTHORIZE_URL = 'https://www.openstreetmap.org/oauth2/authorize';
   const TOKEN_URL = 'https://www.openstreetmap.org/oauth2/token';
   const API_BASE = 'https://www.openstreetmap.org/api/0.6';
