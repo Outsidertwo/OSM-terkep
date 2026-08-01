@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>OSM feltöltés teszt</title>
+<style>
+  body { font-family: sans-serif; max-width: 700px; margin: 30px auto; padding: 0 16px; }
+  h1 { font-size: 22px; }
+  .doboz { background: #f7f7f7; border: 1px solid #ddd; border-radius: 6px; padding: 14px 16px; margin-bottom: 16px; }
+  label { display: block; font-weight: bold; margin-bottom: 4px; }
+  input[type=text], input[type=number] { width: 100%; padding: 6px 8px; font-size: 14px; box-sizing: border-box; }
+  button { padding: 8px 14px; font-size: 14px; border-radius: 4px; border: 1px solid #ccc; background: #eef4ff; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 8px; }
+  td { padding: 3px 8px; border-bottom: 1px solid #eee; vertical-align: top; }
+  td:first-child { color: #555; white-space: nowrap; }
+  .uj-tag-sor { display: flex; gap: 6px; margin-top: 8px; }
+  .uj-tag-sor input { flex: 1; }
+  #hiba { color: #c0392b; margin-top: 8px; white-space: pre-wrap; }
+  #eredmeny { color: #2d6a2d; margin-top: 8px; }
+  #stagedLista { margin-top: 8px; font-size: 13px; }
+  #stagedLista div { display: flex; justify-content: space-between; padding: 2px 0; }
+</style>
+</head>
+<body>
+<h1>OSM feltöltés teszt</h1>
+<p style="color:#888; font-size:13px;">
+  Ez az oldal ÉLES OSM-adatot módosít. Csak olyan node-on próbáld, amit utána vissza tudsz vonni/javítani.
+</p>
+
+<div class="doboz">
+  <div id="bejelentkezesAllapot">Bejelentkezés ellenőrzése...</div>
+  <button id="bejelentkezesBtn" style="margin-top:8px;"></button>
+</div>
+
+<div class="doboz">
+  <label for="nodeIdBemenet">OSM node ID</label>
+  <input type="number" id="nodeIdBemenet" placeholder="pl. 1234567890" />
+  <button id="nodeLekeresBtn" style="margin-top:8px;">Node lekérése</button>
+  <div id="nodeAdatok"></div>
+</div>
+
+<div class="doboz" id="tagSzerkesztoDoboz" style="display:none;">
+  <label>Tagek szerkesztése (csak amit ide beírsz, azt módosítja/adja hozzá — a többi tag változatlan marad)</label>
+  <div class="uj-tag-sor">
+    <input type="text" id="ujTagKulcs" placeholder="kulcs, pl. ref" />
+    <input type="text" id="ujTagErtek" placeholder="érték, pl. 05617" />
+    <button id="ujTagHozzaadBtn">Hozzáadás a listához</button>
+  </div>
+  <div id="stagedLista"></div>
+  <div style="margin-top:12px;">
+    <label for="changesetMegjegyzes">Changeset megjegyzés</label>
+    <input type="text" id="changesetMegjegyzes" value="Teszt szerkesztés — MÁV felsővezeték-oszlop térkép fejlesztés" />
+  </div>
+  <button id="feltoltesBtn" style="margin-top:10px;">Feltöltés OSM-re</button>
+  <div id="hiba"></div>
+  <div id="eredmeny"></div>
+</div>
+
+<script src="./osm_auth.js"></script>
+<script src="./osm_szerkesztes.js"></script>
+<script>
+  const stagedTagek = {};
+
+  function bejelentkezesAllapotFrissit() {
+    const allapotEl = document.getElementById('bejelentkezesAllapot');
+    const btn = document.getElementById('bejelentkezesBtn');
+    if (!osmAuth.tokenVan()) {
+      allapotEl.textContent = 'Nincs bejelentkezve.';
+      btn.textContent = 'Bejelentkezés OSM-mel';
+      btn.onclick = () => osmAuth.bejelentkezes();
+      return;
+    }
+    allapotEl.textContent = 'Bejelentkezve.';
+    btn.textContent = 'Kijelentkezés';
+    btn.onclick = () => { osmAuth.kijelentkezes(); bejelentkezesAllapotFrissit(); };
+    osmAuth.sajatAdatok()
+      .then(u => { allapotEl.textContent = 'Bejelentkezve mint: ' + u.display_name; })
+      .catch(err => { allapotEl.textContent = 'Bejelentkezve (a név lekérdezése sikertelen: ' + err.message + ')'; });
+  }
+
+  function stagedListaKirajzol() {
+    const el = document.getElementById('stagedLista');
+    el.innerHTML = '';
+    Object.entries(stagedTagek).forEach(([k, v]) => {
+      const sor = document.createElement('div');
+      sor.innerHTML = `<span><b>${k}</b> = ${v}</span> <a href="#" data-kulcs="${k}" style="color:#c0392b;">törlés</a>`;
+      sor.querySelector('a').addEventListener('click', (ev) => {
+        ev.preventDefault();
+        delete stagedTagek[k];
+        stagedListaKirajzol();
+      });
+      el.appendChild(sor);
+    });
+  }
+
+  document.getElementById('ujTagHozzaadBtn').addEventListener('click', () => {
+    const kulcs = document.getElementById('ujTagKulcs').value.trim();
+    const ertek = document.getElementById('ujTagErtek').value.trim();
+    if (!kulcs) return;
+    stagedTagek[kulcs] = ertek;
+    document.getElementById('ujTagKulcs').value = '';
+    document.getElementById('ujTagErtek').value = '';
+    stagedListaKirajzol();
+  });
+
+  document.getElementById('nodeLekeresBtn').addEventListener('click', async () => {
+    const nodeId = document.getElementById('nodeIdBemenet').value.trim();
+    const nodeAdatokEl = document.getElementById('nodeAdatok');
+    nodeAdatokEl.textContent = '';
+    document.getElementById('hiba').textContent = '';
+    if (!nodeId) return;
+    if (!osmAuth.tokenVan()) {
+      nodeAdatokEl.textContent = 'Előbb jelentkezz be.';
+      return;
+    }
+    try {
+      const node = await osmSzerkesztes.nodeLekerdezese(nodeId);
+      const sorok = Object.entries(node.tagek)
+        .map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
+      nodeAdatokEl.innerHTML =
+        `<table><tr><td>verzió</td><td>${node.verzio}</td></tr>` +
+        `<tr><td>koordináta</td><td>${node.lat}, ${node.lon}</td></tr>${sorok}</table>`;
+      document.getElementById('tagSzerkesztoDoboz').style.display = 'block';
+    } catch (err) {
+      nodeAdatokEl.textContent = '';
+      document.getElementById('hiba').textContent = 'Nem sikerült lekérni a node-ot: ' + err.message;
+    }
+  });
+
+  document.getElementById('feltoltesBtn').addEventListener('click', async () => {
+    const nodeId = document.getElementById('nodeIdBemenet').value.trim();
+    const megjegyzes = document.getElementById('changesetMegjegyzes').value.trim() || 'Teszt szerkesztés';
+    const hibaEl = document.getElementById('hiba');
+    const eredmenyEl = document.getElementById('eredmeny');
+    hibaEl.textContent = '';
+    eredmenyEl.textContent = '';
+    if (Object.keys(stagedTagek).length === 0) {
+      hibaEl.textContent = 'Adj hozzá legalább egy tag-et a listához, mielőtt feltöltenéd.';
+      return;
+    }
+    const btn = document.getElementById('feltoltesBtn');
+    btn.disabled = true;
+    btn.textContent = 'Feltöltés folyamatban...';
+    try {
+      const eredmeny = await osmSzerkesztes.nodeFeltoltese(nodeId, stagedTagek, megjegyzes);
+      eredmenyEl.innerHTML =
+        `Sikeres feltöltés. Új verzió: ${eredmeny.ujVerzio}.<br>` +
+        `<a href="${eredmeny.changesetUrl}" target="_blank">Changeset megtekintése</a> — ` +
+        `<a href="${eredmeny.nodeUrl}" target="_blank">Node megtekintése</a>`;
+    } catch (err) {
+      hibaEl.textContent = 'Hiba a feltöltés közben: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Feltöltés OSM-re';
+    }
+  });
+
+  osmAuth.visszaterasFeldolgozasa().then(() => bejelentkezesAllapotFrissit());
+</script>
+</body>
+</html>
