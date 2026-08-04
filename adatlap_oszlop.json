@@ -67,6 +67,15 @@
       "osm": null
     },
     {
+      "kod": "foldelesi_pont",
+      "nev": "Földelési pont",
+      "tipus": "checkbox",
+      "terkepen": true,
+      "rovidites": "Fp",
+      "megjegyzes": "Nincs hozzá hivatalos OSM-tag, saját mező marad.",
+      "osm": null
+    },
+    {
       "kod": "foldeles",
       "nev": "Földelés",
       "tipus": "radio",
@@ -77,16 +86,7 @@
         { "kod": "rovid", "nev": "Rövid" }
       ]
     },
-    {
-      "kod": "foldelesi_pont",
-      "nev": "Földelési pont",
-      "tipus": "checkbox",
-      "terkepen": true,
-      "rovidites": "Fp",
-      "megjegyzes": "Nincs hozzá hivatalos OSM-tag, saját mező marad.",
-      "osm": null
-    },
-
+    
     {
       "kod": "szakaszolo",
       "nev": "Szakaszoló",
