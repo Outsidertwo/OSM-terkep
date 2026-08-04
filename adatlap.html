@@ -67,7 +67,20 @@
 <div id="forma">
   <h1>Oszlop adatlap — <span id="cimSpan"></span></h1>
   <div id="mezokKontener"></div>
-  <div style="display:flex; gap:10px; margin-top:20px; padding-top:16px; border-top:1px solid #eee;">
+  <details id="githubTokenPanel" style="margin-top:16px; font-size:13px; color:#555;">
+    <summary style="cursor:pointer;">GitHub mentés beállítása</summary>
+    <div style="margin-top:6px;">
+      <div id="githubTokenAllapot" style="margin-bottom:6px;"></div>
+      <input type="password" id="githubTokenBemenet" placeholder="GitHub Personal Access Token" style="width:70%;" />
+      <button type="button" id="githubTokenMentesBtn" class="kicsi">Mentés a böngészőben</button>
+      <button type="button" id="githubTokenTorlesBtn" class="kicsi">Token törlése</button>
+      <div style="margin-top:4px; color:#888;">
+        A token csak ebben a böngészőben marad, sosem kerül a repóba. Ha nincs beállítva,
+        a Mentés gomb egy letölthető fájlt készít helyette.
+      </div>
+    </div>
+  </details>
+  <div style="display:flex; gap:10px; margin-top:14px; padding-top:16px; border-top:1px solid #eee;">
     <button type="button" id="mentesBtn" style="flex:1; padding:10px; font-size:15px; font-weight:bold; border:none; border-radius:4px; background:#1a73e8; color:white; cursor:pointer;">Mentés</button>
     <button type="button" id="megseBtn" style="flex:1; padding:10px; font-size:15px; border:1px solid #ccc; border-radius:4px; background:#f0f0f0; cursor:pointer;">Mégse</button>
   </div>
@@ -107,6 +120,7 @@
   </div>
 </div>
 
+<script src="./github_mentes.js"></script>
 <script src="./adatlap_motor.js"></script>
 </body>
 </html>

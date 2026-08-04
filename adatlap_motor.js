@@ -570,6 +570,8 @@
     return osszegyujtOsmTageket();
   };
 
+  let bejovoOsmId = null;
+
   async function urlParameterbolElotolt() {
     const parameterek = new URLSearchParams(window.location.search);
     const kodolt = parameterek.get('tagek');
@@ -581,6 +583,7 @@
       console.warn('Nem sikerült értelmezni a ?tagek= URL-paramétert:', err);
       return;
     }
+    bejovoOsmId = tagek._osm_id || null;
     const nevSzoveg = tagek.name || tagek.ref;
     if (!nevSzoveg) return;
     const nevMezoBemenetEl = document.getElementById('nevMezoBemenet');
@@ -641,20 +644,68 @@
     return hianyzok;
   }
 
+  function githubTokenAllapotFrissit() {
+    const allapotEl = document.getElementById('githubTokenAllapot');
+    if (!allapotEl) return;
+    if (typeof githubMentes !== 'undefined' && githubMentes.tokenVan()) {
+      allapotEl.textContent = 'Token beállítva — a Mentés gomb közvetlenül a közös fájlba ír.';
+      allapotEl.style.color = '#2d6a2d';
+    } else {
+      allapotEl.textContent = 'Nincs token beállítva — a Mentés gomb egyelőre fájlt tölt le.';
+      allapotEl.style.color = '#888';
+    }
+  }
+  githubTokenAllapotFrissit();
+
+  const githubTokenMentesBtnEl = document.getElementById('githubTokenMentesBtn');
+  if (githubTokenMentesBtnEl) {
+    githubTokenMentesBtnEl.addEventListener('click', () => {
+      const bemenetEl = document.getElementById('githubTokenBemenet');
+      if (bemenetEl.value.trim()) {
+        githubMentes.tokenBeallitasa(bemenetEl.value.trim());
+        bemenetEl.value = '';
+        githubTokenAllapotFrissit();
+      }
+    });
+  }
+  const githubTokenTorlesBtnEl = document.getElementById('githubTokenTorlesBtn');
+  if (githubTokenTorlesBtnEl) {
+    githubTokenTorlesBtnEl.addEventListener('click', () => {
+      githubMentes.tokenTorlese();
+      githubTokenAllapotFrissit();
+    });
+  }
+
   const mentesBtnEl = document.getElementById('mentesBtn');
   if (mentesBtnEl) {
-    mentesBtnEl.addEventListener('click', () => {
+    mentesBtnEl.addEventListener('click', async () => {
       const hianyzok = ervenyesitKotelezoMezoket();
       if (hianyzok.length > 0) {
         alert('Mentés előtt töltsd ki: ' + hianyzok.join(', '));
         return;
       }
       frissitElonezet();
-      // Egyelőre csak a saját (GitHubra szánt) rekordot mentjük fájlba — az OSM-kompatibilis
-      // tagek (a "Generált OSM-tagek" panelen láthatók) egyelőre külön, kézzel kerülnek fel
-      // az OSM-re. Később, ha a mentési folyamat készen áll, ez a gomb az OSM-re menthető
-      // mezőket automatikusan a szerkesztésekhez (changesethez) is hozzáadhatja.
+      // A saját (GitHubra szánt) rekord — az OSM-kompatibilis tagek (a "Generált OSM-tagek"
+      // panelen láthatók) egyelőre külön, kézzel kerülnek fel az OSM-re; ez a gomb a közös
+      // adatfájlt frissíti, amit majd a térkép is beolvas.
       const rekord = { ...formazottRekord(), tartoszerkezetek: tartoszerkezetek };
+      if (bejovoOsmId) rekord._osm_id = bejovoOsmId;
+
+      if (typeof githubMentes !== 'undefined' && githubMentes.tokenVan()) {
+        mentesBtnEl.disabled = true;
+        mentesBtnEl.textContent = 'Mentés folyamatban...';
+        try {
+          await githubMentes.rekordMentese(allapot['szam'], rekord);
+          bezarAblakot();
+        } catch (err) {
+          alert('Nem sikerült menteni a GitHub-ra: ' + err.message + '\n\nEllenőrizd a tokent, vagy próbáld újra.');
+          mentesBtnEl.disabled = false;
+          mentesBtnEl.textContent = 'Mentés';
+        }
+        return;
+      }
+
+      // Nincs beállítva GitHub token — fájlba mentünk letöltésként (kézzel bemásolható a repóba).
       const fajlnev = (allapot['szam'] || 'oszlop') + '.json';
       const blob = new Blob([JSON.stringify(rekord, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);

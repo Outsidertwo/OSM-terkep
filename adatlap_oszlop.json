@@ -162,13 +162,13 @@
       "terkepen": true,
       "terkepen_meret_nelkul": true,
       "opciok": [
-        { "kod": "T",   "nev": "Tartó (T)",         "osm": { "structure": "frame" } },
-        { "kod": "L",   "nev": "Lengő (L)",          "osm": { "structure": "frame" }, "megjegyzes": "Csak portál szerkezetben fordul elő." },
+        { "kod": "T",   "nev": "Tartó (T)",         "osm": { "structure": "frame", "material": "steel"  } },
+        { "kod": "L",   "nev": "Lengő (L)",          "osm": { "structure": "frame", "material": "steel"  }, "megjegyzes": "Csak portál szerkezetben fordul elő." },
         { "kod": "Ta",  "nev": "Lehorgonyzó (Ta)",   "osm": { "structure": "frame" } },
         { "kod": "F",   "nev": "Feszítő (F)",        "osm": { "structure": "lattice" } },
         { "kod": "K",   "nev": "Keresztmező (K)",    "osm": { "structure": "lattice" } },
         { "kod": "KR",  "nev": "Keretállás (KR)",    "osm": { "structure": "lattice" } },
-        { "kod": "MKR", "nev": "Mini KR (MKR)",      "osm": { "structure": "lattice" } },
+        { "kod": "MKR", "nev": "Mini KR (MKR)",      "osm": { "structure": "lattice", "material": "steel"  } },
         { "kod": "P",   "nev": "Pörgetett betonacél (P)", "osm": { "structure": "spun", "material": "concrete" } },
         { "kod": "BM",  "nev": "Betonacél (BM)",     "osm": { "structure": "spun", "material": "concrete" } },
         { "kod": "CSŐ", "nev": "Acél csőoszlop (CSŐ)", "osm": { "structure": "pole", "material": "steel" } }

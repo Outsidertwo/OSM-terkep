@@ -416,7 +416,6 @@
     if (osmSzerkesztesEngedelyezve && type && type.key === 'oszlop' && tags._osm_id) {
       const tisztaTagek = { ...tags };
       delete tisztaTagek._vonal;
-      delete tisztaTagek._osm_id;
       const kodolt = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(tisztaTagek)))));
       gombok = `<div style="margin-top:8px; display:flex; gap:6px;">
         <button onclick="window.open('adatlap.html?tagek=${kodolt}', '_blank')"
