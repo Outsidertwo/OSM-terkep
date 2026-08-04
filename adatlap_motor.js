@@ -571,18 +571,24 @@
   };
 
   let bejovoOsmId = null;
+  let bejovoLat = null;
+  let bejovoLon = null;
 
   async function urlParameterbolElotolt() {
     const parameterek = new URLSearchParams(window.location.search);
-    const kodolt = parameterek.get('tagek');
+    const kodolt = parameterek.get('adat') || parameterek.get('tagek'); // 'tagek' = régi formátum, visszafelé kompatibilis
     if (!kodolt) return;
-    let tagek;
+    let adat;
     try {
-      tagek = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(kodolt)))));
+      adat = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(kodolt)))));
     } catch (err) {
-      console.warn('Nem sikerült értelmezni a ?tagek= URL-paramétert:', err);
+      console.warn('Nem sikerült értelmezni az URL-paramétert:', err);
       return;
     }
+    // Az új formátum {tagek, lat, lon} — a régi formátum egyenesen a tagek objektum volt.
+    const tagek = adat.tagek || adat;
+    bejovoLat = adat.lat != null ? adat.lat : null;
+    bejovoLon = adat.lon != null ? adat.lon : null;
     bejovoOsmId = tagek._osm_id || null;
     const nevSzoveg = tagek.name || tagek.ref;
     if (!nevSzoveg) return;
@@ -690,6 +696,9 @@
       // adatfájlt frissíti, amit majd a térkép is beolvas.
       const rekord = { ...formazottRekord(), tartoszerkezetek: tartoszerkezetek };
       if (bejovoOsmId) rekord._osm_id = bejovoOsmId;
+      if (bejovoLat != null) rekord.lat = bejovoLat;
+      if (bejovoLon != null) rekord.lon = bejovoLon;
+      rekord.osm_tagek = osszegyujtOsmTageket();
 
       if (typeof githubMentes !== 'undefined' && githubMentes.tokenVan()) {
         mentesBtnEl.disabled = true;

@@ -157,6 +157,9 @@
   // tartozik (átfedő vonalaknál egy elem csak az őt ténylegesen tartalmazó vonalhoz tartozik).
   let osszesFeature = [];
   const letoltottVonalak = new Set();
+  // A sajat_adatok.ndjson tartalma _osm_id kulccsal — ez az elsődleges forrás: offline/Overpass
+  // nélkül is ebből rajzolunk, az Overpass-eredmény pedig csak frissíti/kiegészíti.
+  const sajatAdatokTerkep = new Map();
 
   const osszesMarker = []; // minden létrehozott marker, hogy szükség esetén elérhetők legyenek
 
@@ -393,9 +396,9 @@
     });
   }
 
-  function popupContent(tags, type) {
+  function popupContent(tags, type, lat, lon) {
     const rows = Object.entries(tags)
-      .filter(([k]) => !REJTETT_MEZOK.has(k) && k !== '_vonal' && k !== '_osm_id')
+      .filter(([k]) => !REJTETT_MEZOK.has(k) && k !== '_vonal' && k !== '_osm_id' && k !== '_sajat')
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, v]) => `<tr><td>${escapeHtml(magyarMezonev(k))}</td><td>${escapeHtml(magyarErtek(k, v))}</td></tr>`)
       .join('');
@@ -410,15 +413,36 @@
       </div>`;
     }
 
+    // A mentett, csak nálunk (GitHub-on) létező kiegészítő adatok — nem hivatalos OSM-tagek,
+    // ezért külön, elválasztva jelenítjük meg. A nyers/technikai mezőket (osm_tagek, lat, lon,
+    // szam — ez utóbbi már a fenti táblázatban is szerepel ref/name formában) kihagyjuk.
+    let sajatSor = '';
+    if (tags._sajat) {
+      const KIHAGYVA = new Set(['osm_tagek', 'lat', 'lon', 'szam', 'tartoszerkezetek', '_osm_id']);
+      const sajatSorok = Object.entries(tags._sajat)
+        .filter(([k, v]) => !KIHAGYVA.has(k) && v !== '' && v !== false && v != null)
+        .map(([k, v]) => {
+          const cimke = k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+          const ertek = v === true ? 'igen' : v;
+          return `<tr><td>${escapeHtml(cimke)}</td><td>${escapeHtml(String(ertek))}</td></tr>`;
+        })
+        .join('');
+      if (sajatSorok) {
+        sajatSor = `<div style="font-size:12px; color:#888; margin:8px 0 2px;">Mentett kiegészítő adatok:</div>
+          <table class="popup-table">${sajatSorok}</table>`;
+      }
+    }
+
     // Szerkesztés + Mozgatás gomb — csak bejelentkezve (mivel csak akkor tudnánk menteni
     // is az eredményt), és egyelőre csak oszlophoz van kész adatlap-séma/mozgatás-logika.
     let gombok = '';
     if (osmSzerkesztesEngedelyezve && type && type.key === 'oszlop' && tags._osm_id) {
       const tisztaTagek = { ...tags };
       delete tisztaTagek._vonal;
-      const kodolt = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(tisztaTagek)))));
+      delete tisztaTagek._sajat;
+      const kodolt = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify({ tagek: tisztaTagek, lat, lon })))));
       gombok = `<div style="margin-top:8px; display:flex; gap:6px;">
-        <button onclick="window.open('adatlap.html?tagek=${kodolt}', '_blank')"
+        <button onclick="window.open('adatlap.html?adat=${kodolt}', '_blank')"
                 style="font-size:13px; padding:4px 10px; border:1px solid #ccc; border-radius:4px; background:#f0f0f0; cursor:pointer;">
           Szerkesztés
         </button>
@@ -429,7 +453,7 @@
       </div>`;
     }
 
-    return `${osmIdSor}<table class="popup-table">${rows}</table>${gombok}`;
+    return `${osmIdSor}<table class="popup-table">${rows}</table>${sajatSor}${gombok}`;
   }
 
   function classify(tags) {
@@ -497,7 +521,8 @@
     popupEl.querySelector('.poz-megse-gomb').addEventListener('click', () => {
       marker.setLatLng(eredetiLatLng);
       marker.dragging.disable();
-      marker.setPopupContent(popupContent(tags, classify(tags)));
+      const p = marker.getLatLng();
+      marker.setPopupContent(popupContent(tags, classify(tags), p.lat, p.lng));
     });
     popupEl.querySelector('.poz-mentes-gomb').addEventListener('click', async (ev) => {
       const btn = ev.currentTarget;
@@ -511,7 +536,8 @@
           { lat: ujPoz.lat, lon: ujPoz.lng }
         );
         marker.dragging.disable();
-        marker.setPopupContent(popupContent(tags, classify(tags)));
+        const p = marker.getLatLng();
+        marker.setPopupContent(popupContent(tags, classify(tags), p.lat, p.lng));
       } catch (err) {
         hibaEl.textContent = 'Hiba a mentés közben: ' + err.message;
         btn.disabled = false;
@@ -522,7 +548,7 @@
 
   function addMarker(type, lat, lon, tags, memberCount, feature) {
     const marker = L.marker([lat, lon], { icon: makeIcon(type.color, type.shape), draggable: false });
-    marker.bindPopup(popupContent(tags, type));
+    marker.bindPopup(popupContent(tags, type, lat, lon));
     marker.on('popupopen', (ev) => {
       const mozgatasBtn = ev.popup.getElement().querySelector('.mozgatas-gomb');
       if (mozgatasBtn) mozgatasBtn.addEventListener('click', () => mozgatasModValt(marker, tags));
@@ -659,6 +685,64 @@
       }));
   }
 
+  // A közös, GitHub-on tárolt kiegészítő adatfájl betöltése. Nem hiba, ha még nem létezik
+  // (404) — ez azt jelenti, hogy még semmit nem mentettünk belőle.
+  async function sajatAdatokBetoltese() {
+    try {
+      const res = await fetch('./sajat_adatok.ndjson');
+      if (!res.ok) {
+        if (res.status !== 404) console.warn('sajat_adatok.ndjson nem tölthető be:', res.status);
+        return;
+      }
+      const szoveg = await res.text();
+      szoveg.split('\n').filter(s => s.trim() !== '').forEach(sor => {
+        try {
+          const rekord = JSON.parse(sor);
+          if (rekord._osm_id) sajatAdatokTerkep.set(String(rekord._osm_id), rekord);
+        } catch (err) {
+          console.warn('Hibás sor a sajat_adatok.ndjson-ban, kihagyva:', sor);
+        }
+      });
+    } catch (err) {
+      console.warn('sajat_adatok.ndjson betöltése sikertelen:', err);
+    }
+  }
+
+  // A sajatAdatokTerkep tartalmából épít geojson feature-öket (csak azokból a rekordokból,
+  // amikhez van mentett koordináta) — ez az elsődleges, Overpass nélkül is használható forrás.
+  function sajatAdatokFeatureKent() {
+    const feats = [];
+    sajatAdatokTerkep.forEach((rekord, osmId) => {
+      if (rekord.lat == null || rekord.lon == null) return;
+      feats.push({
+        type: 'Feature',
+        properties: { ...(rekord.osm_tagek || {}), _osm_id: Number(osmId), _sajat: rekord },
+        geometry: { type: 'Point', coordinates: [rekord.lon, rekord.lat] }
+      });
+    });
+    return feats;
+  }
+
+  // Két feature-lista összefésülése _osm_id szerint: az ujLista (pl. friss Overpass-adat)
+  // felülírja a regiLista azonos id-jű elemeit (friss OSM-tagekkel), de a mentett _sajat
+  // kiegészítő adatot áthozza a régi elemről, hogy ne vesszen el. Az id nélküli elemek
+  // (nem várt eset, de biztonsági háló) egyszerűen egymás mellé kerülnek.
+  function featureekOsszefesulese(regiLista, ujLista) {
+    const idNelkuliek = regiLista.filter(f => !f.properties._osm_id);
+    const map = new Map();
+    regiLista.forEach(f => { if (f.properties._osm_id) map.set(String(f.properties._osm_id), f); });
+    ujLista.forEach(f => {
+      const kulcs = f.properties._osm_id ? String(f.properties._osm_id) : null;
+      if (kulcs && map.has(kulcs)) {
+        const regiSajat = map.get(kulcs).properties._sajat;
+        if (regiSajat) f.properties._sajat = regiSajat;
+      }
+      if (kulcs) map.set(kulcs, f);
+      else idNelkuliek.push(f);
+    });
+    return [...idNelkuliek, ...Array.from(map.values())];
+  }
+
   async function loadLocalSnapshot() {
     statusEl.textContent = 'Helyi adatfájl betöltése (adatok.geojson)...';
     const res = await fetch(LOCAL_SNAPSHOT_PATH);
@@ -709,7 +793,7 @@
       console.warn('Egyik vonal sem tölthető be élőben, helyi fájlra váltás.');
       try {
         const geojson = await loadLocalSnapshot();
-        osszesFeature = geojson.features;
+        osszesFeature = featureekOsszefesulese(osszesFeature, geojson.features);
         alkalmazSzurokEsRajzol();
         statusEl.textContent += ' (helyi mentett adat — nem feltétlenül friss!)';
         statusEl.style.color = '#b36b00';
@@ -720,7 +804,7 @@
       return;
     }
 
-    osszesFeature = sikeres;
+    osszesFeature = featureekOsszefesulese(osszesFeature, sikeres);
     alkalmazSzurokEsRajzol();
     statusEl.textContent += sikertelenVonalak.length > 0
       ? ` (élő adat — de nem sikerült: ${sikertelenVonalak.join(', ')})`
@@ -786,6 +870,16 @@
       statusEl.textContent = 'Figyelmeztetés: vonalak.json nem tölthető be, beépített alapértelmezéssel indul.';
     }
     vonalListaKirajzolas();
+
+    // A mentett saját adatok az elsődleges forrás — ezekből azonnal rajzolunk, még mielőtt
+    // bármilyen hálózati (Overpass) kérés elindulna. Az "Adatok letöltése" gombra ezt majd
+    // csak frissíti/kiegészíti a friss OSM-adat, nem írja felül.
+    await sajatAdatokBetoltese();
+    if (sajatAdatokTerkep.size > 0) {
+      osszesFeature = sajatAdatokFeatureKent();
+      alkalmazSzurokEsRajzol();
+      statusEl.textContent = `${sajatAdatokTerkep.size} mentett oszlop betöltve. Válaszd ki a vonalakat, majd "Adatok letöltése" a frissítéshez.`;
+    }
   }
   inditas();
 
