@@ -550,7 +550,13 @@
     const marker = L.marker([lat, lon], { icon: makeIcon(type.color, type.shape), draggable: false });
     marker.bindPopup(popupContent(tags, type, lat, lon));
     marker.on('popupopen', (ev) => {
-      const mozgatasBtn = ev.popup.getElement().querySelector('.mozgatas-gomb');
+      const popupEl = ev.popup.getElement();
+      // A popup gombjaira (Szerkesztés, Mozgatás, Pozíció mentése, Mégse stb.) kattintva
+      // a kattintás alapértelmezetten feljutna a térképig, ami a Leaflet closePopupOnClick
+      // beállítása miatt azonnal bezárná a popupot -- emiatt ragadt be korábban a
+      // mozgatás-UI (a visszaállító setPopupContent sosem futott le rendesen).
+      L.DomEvent.disableClickPropagation(popupEl);
+      const mozgatasBtn = popupEl.querySelector('.mozgatas-gomb');
       if (mozgatasBtn) mozgatasBtn.addEventListener('click', () => mozgatasModValt(marker, tags));
     });
     const labelHtml = type.buildLabelHtml(tags);
