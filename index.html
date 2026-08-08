@@ -79,6 +79,15 @@
 <script>
   const map = L.map('map').setView([47.35, 19.85], 10);
 
+  // DIAGNOSZTIKA: minden egyes kattintást naplóz, MIELŐTT bármelyik más eseménykezelő
+  // (a miénk vagy a Leafleté) lefutna (capture fázis, harmadik paraméter: true) --
+  // ez megmutatja, PONTOSAN melyik HTML-elemre landolt ténylegesen a kattintás
+  // (pl. a popup natív X gombjára, egy gombra, vagy valami egészen másra).
+  document.addEventListener('click', (ev) => {
+    console.log('[DIAG] document click, tényleges cél (target):', ev.target,
+      'tagName=', ev.target.tagName, 'className=', ev.target.className);
+  }, true);
+
   // Igaz, ha a felhasználó be van jelentkezve OSM-mel — ettől függ, hogy a popupban
   // megjelenik-e a Szerkesztés/Mozgatás gomb.
   let osmSzerkesztesEngedelyezve = false;
