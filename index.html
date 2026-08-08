@@ -58,6 +58,7 @@
   Mentés adatok.geojson-ként
 </button>
 <div style="position:absolute; top:98px; left:50px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:14px; display:flex; flex-direction:column; gap:8px; min-width:240px;">
+  <div id="buildVerzio" style="font-size:11px; color:#888; user-select:all;"></div>
   <div>
     <label for="manualFileInput">Helyi fájl betöltése (ha az élő adat hibás/hiányos):</label><br>
     <input type="file" id="manualFileInput" accept=".geojson,.json" />
@@ -77,16 +78,17 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-locatecontrol/0.79.0/L.Control.Locate.min.js"></script>
 <script src="./osm_auth.js"></script>
 <script>
-  const map = L.map('map').setView([47.35, 19.85], 10);
+  // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
+  // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
+  // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
+  const BUILD_VERZIO = '2026-08-08 -- objektum-mozgatás eltávolítva, diagnosztikai logok';
+  document.addEventListener('DOMContentLoaded', () => {
+    const el = document.getElementById('buildVerzio');
+    if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
+  });
+  console.log('[DIAG] BUILD_VERZIO =', BUILD_VERZIO);
 
-  // DIAGNOSZTIKA: minden egyes kattintást naplóz, MIELŐTT bármelyik más eseménykezelő
-  // (a miénk vagy a Leafleté) lefutna (capture fázis, harmadik paraméter: true) --
-  // ez megmutatja, PONTOSAN melyik HTML-elemre landolt ténylegesen a kattintás
-  // (pl. a popup natív X gombjára, egy gombra, vagy valami egészen másra).
-  document.addEventListener('click', (ev) => {
-    console.log('[DIAG] document click, tényleges cél (target):', ev.target,
-      'tagName=', ev.target.tagName, 'className=', ev.target.className);
-  }, true);
+  const map = L.map('map').setView([47.35, 19.85], 10);
 
   // Igaz, ha a felhasználó be van jelentkezve OSM-mel — ettől függ, hogy a popupban
   // megjelenik-e a Szerkesztés/Mozgatás gomb.
@@ -442,8 +444,12 @@
       }
     }
 
-    // Szerkesztés + Mozgatás gomb — csak bejelentkezve (mivel csak akkor tudnánk menteni
-    // is az eredményt), és egyelőre csak oszlophoz van kész adatlap-séma/mozgatás-logika.
+    // Szerkesztés gomb — csak bejelentkezve (mivel csak akkor tudnánk menteni is
+    // az eredményt), és egyelőre csak oszlophoz van kész adatlap-séma.
+    // (A korábbi Mozgatás gomb/pozíció-szerkesztés eltávolítva: a Leaflet.markercluster
+    // plugin saját, belső mechanizmusa a húzás indulásakor mindig bezárta a popupot,
+    // ez a plugin szándékos viselkedése, nem hiba -- a pozíció-pontosítás ezután
+    // OSM-szerkesztőben (pl. iD, JOSM) történik.)
     let gombok = '';
     if (osmSzerkesztesEngedelyezve && type && type.key === 'oszlop' && tags._osm_id) {
       const tisztaTagek = { ...tags };
@@ -454,10 +460,6 @@
         <button onclick="window.open('adatlap.html?adat=${kodolt}', '_blank')"
                 style="font-size:13px; padding:4px 10px; border:1px solid #ccc; border-radius:4px; background:#f0f0f0; cursor:pointer;">
           Szerkesztés
-        </button>
-        <button class="mozgatas-gomb"
-                style="font-size:13px; padding:4px 10px; border:1px solid #ccc; border-radius:4px; background:#f0f0f0; cursor:pointer;">
-          Mozgatás
         </button>
       </div>`;
     }
@@ -509,81 +511,11 @@
   ).addTo(map);
   TYPES.forEach(type => layerControl.addOverlay(clusterGroups[type.key], type.label));
 
-  function mozgatasModValt(marker, tags) {
-    console.log('[DIAG] mozgatasModValt indul', tags.ref || tags.name || '(?)');
-    const eredetiLatLng = marker.getLatLng();
-    marker.dragging.enable();
-    marker.setPopupContent(`
-      <div style="font-size:14px;">
-        Húzd az objektumot az új helyére, majd nyomd meg a Pozíció mentése gombot.
-      </div>
-      <div id="mozgatasHiba" style="color:#c0392b; font-size:13px; margin-top:6px;"></div>
-      <div style="margin-top:8px; display:flex; gap:6px;">
-        <button class="poz-mentes-gomb" style="font-size:13px; padding:4px 10px; border:1px solid #ccc; border-radius:4px; background:#eef4ff; cursor:pointer;">
-          Pozíció mentése
-        </button>
-        <button class="poz-megse-gomb" style="font-size:13px; padding:4px 10px; border:1px solid #ccc; border-radius:4px; background:#f0f0f0; cursor:pointer;">
-          Mégse
-        </button>
-      </div>
-    `);
-    const popupEl = marker.getPopup().getElement();
-    popupEl.querySelector('.poz-megse-gomb').addEventListener('click', () => {
-      console.log('[DIAG] Mégse gomb kattintva', tags.ref || tags.name || '(?)');
-      marker.setLatLng(eredetiLatLng);
-      marker.dragging.disable();
-      const p = marker.getLatLng();
-      marker.setPopupContent(popupContent(tags, classify(tags), p.lat, p.lng));
-      console.log('[DIAG] Mégse: popupContent visszaállítva');
-    });
-    popupEl.querySelector('.poz-mentes-gomb').addEventListener('click', async (ev) => {
-      console.log('[DIAG] Pozíció mentése gomb kattintva', tags.ref || tags.name || '(?)');
-      const btn = ev.currentTarget;
-      const hibaEl = popupEl.querySelector('#mozgatasHiba');
-      btn.disabled = true;
-      btn.textContent = 'Mentés folyamatban...';
-      const ujPoz = marker.getLatLng();
-      try {
-        console.log('[DIAG] nodeFeltoltese indul', tags._osm_id, ujPoz);
-        await osmSzerkesztes.nodeFeltoltese(
-          tags._osm_id, {}, 'Felsővezeték-oszlop pozíciójának pontosítása',
-          { lat: ujPoz.lat, lon: ujPoz.lng }
-        );
-        console.log('[DIAG] nodeFeltoltese sikeres');
-        marker.dragging.disable();
-        const p = marker.getLatLng();
-        marker.setPopupContent(popupContent(tags, classify(tags), p.lat, p.lng));
-        console.log('[DIAG] Mentés: popupContent visszaállítva');
-      } catch (err) {
-        console.log('[DIAG] nodeFeltoltese HIBA', err);
-        hibaEl.textContent = 'Hiba a mentés közben: ' + err.message;
-        btn.disabled = false;
-        btn.textContent = 'Pozíció mentése';
-      }
-    });
-  }
-
   function addMarker(type, lat, lon, tags, memberCount, feature) {
     const marker = L.marker([lat, lon], { icon: makeIcon(type.color, type.shape), draggable: false });
-    // DIAGNOSZTIKA/TESZT: autoPan kikapcsolva -- gyanú, hogy a Mozgatás-gomb miatt megnövő
-    // popup-tartalom automatikus pásztázást vált ki, ami a klasztercsoportot újraépíti,
-    // és ennek mellékhatásaként záródik be a popup. Ha ez a teszt megoldja a hibát,
-    // ez lesz a bizonyíték -- utána érdemben (nem csak kikapcsolva) kell kezelni.
-    marker.bindPopup(popupContent(tags, type, lat, lon), { autoPan: false });
-    marker.on('popupopen', (ev) => {
-      console.log('[DIAG] popupopen', tags.ref || tags.name || '(?)', 'marker=', marker);
-      const popupEl = ev.popup.getElement();
-      // A popup gombjaira (Szerkesztés, Mozgatás, Pozíció mentése, Mégse stb.) kattintva
-      // a kattintás alapértelmezetten feljutna a térképig, ami a Leaflet closePopupOnClick
-      // beállítása miatt azonnal bezárná a popupot -- emiatt ragadt be korábban a
-      // mozgatás-UI (a visszaállító setPopupContent sosem futott le rendesen).
-      L.DomEvent.disableClickPropagation(popupEl);
-      const mozgatasBtn = popupEl.querySelector('.mozgatas-gomb');
-      if (mozgatasBtn) mozgatasBtn.addEventListener('click', () => mozgatasModValt(marker, tags));
-    });
+    marker.bindPopup(popupContent(tags, type, lat, lon));
     // DIAGNOSZTIKA: ha a popup bezárul, kiírjuk a hívási láncot (stack trace) is --
-    // ebből látszik, hogy a natív X gomb / kattintás-buborékolás zárta-e be, vagy
-    // valami más kód (pl. egy loadGeoJSON-újrarajzolás a clearLayers miatt).
+    // ebből látszik, mi zárta be (natív X gomb, vagy pl. egy loadGeoJSON-újrarajzolás).
     marker.on('popupclose', () => {
       console.log('[DIAG] popupclose', tags.ref || tags.name || '(?)');
       console.trace('[DIAG] popupclose stack');
@@ -594,17 +526,6 @@
         permanent: true, direction: 'right', offset: [8, 0], className: 'mav-label'
       });
     }
-
-    // Húzással áthelyezhető, DE csak szerkesztői módban — mezei (néző) felhasználó nem tudja
-    // elmozdítani. Egyelőre csak a böngésző memóriájában/a "Mentés adatok.geojson-ként"
-    // exportban frissül a pozíció, élő OSM-írás még nincs bekötve (2. fázis).
-    marker.on('dragend', () => {
-      const pos = marker.getLatLng();
-      if (feature && feature.geometry) {
-        feature.geometry.coordinates = [pos.lng, pos.lat];
-      }
-      console.info('Elem áthelyezve (csak helyben, OSM-re még nincs visszaírva):', tags.ref || tags.name || '(?)', pos);
-    });
 
     osszesMarker.push(marker);
     clusterGroups[type.key].addLayer(marker);
