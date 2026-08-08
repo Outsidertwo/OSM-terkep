@@ -501,6 +501,7 @@
   TYPES.forEach(type => layerControl.addOverlay(clusterGroups[type.key], type.label));
 
   function mozgatasModValt(marker, tags) {
+    console.log('[DIAG] mozgatasModValt indul', tags.ref || tags.name || '(?)');
     const eredetiLatLng = marker.getLatLng();
     marker.dragging.enable();
     marker.setPopupContent(`
@@ -519,26 +520,33 @@
     `);
     const popupEl = marker.getPopup().getElement();
     popupEl.querySelector('.poz-megse-gomb').addEventListener('click', () => {
+      console.log('[DIAG] Mégse gomb kattintva', tags.ref || tags.name || '(?)');
       marker.setLatLng(eredetiLatLng);
       marker.dragging.disable();
       const p = marker.getLatLng();
       marker.setPopupContent(popupContent(tags, classify(tags), p.lat, p.lng));
+      console.log('[DIAG] Mégse: popupContent visszaállítva');
     });
     popupEl.querySelector('.poz-mentes-gomb').addEventListener('click', async (ev) => {
+      console.log('[DIAG] Pozíció mentése gomb kattintva', tags.ref || tags.name || '(?)');
       const btn = ev.currentTarget;
       const hibaEl = popupEl.querySelector('#mozgatasHiba');
       btn.disabled = true;
       btn.textContent = 'Mentés folyamatban...';
       const ujPoz = marker.getLatLng();
       try {
+        console.log('[DIAG] nodeFeltoltese indul', tags._osm_id, ujPoz);
         await osmSzerkesztes.nodeFeltoltese(
           tags._osm_id, {}, 'Felsővezeték-oszlop pozíciójának pontosítása',
           { lat: ujPoz.lat, lon: ujPoz.lng }
         );
+        console.log('[DIAG] nodeFeltoltese sikeres');
         marker.dragging.disable();
         const p = marker.getLatLng();
         marker.setPopupContent(popupContent(tags, classify(tags), p.lat, p.lng));
+        console.log('[DIAG] Mentés: popupContent visszaállítva');
       } catch (err) {
+        console.log('[DIAG] nodeFeltoltese HIBA', err);
         hibaEl.textContent = 'Hiba a mentés közben: ' + err.message;
         btn.disabled = false;
         btn.textContent = 'Pozíció mentése';
@@ -550,6 +558,7 @@
     const marker = L.marker([lat, lon], { icon: makeIcon(type.color, type.shape), draggable: false });
     marker.bindPopup(popupContent(tags, type, lat, lon));
     marker.on('popupopen', (ev) => {
+      console.log('[DIAG] popupopen', tags.ref || tags.name || '(?)', 'marker=', marker);
       const popupEl = ev.popup.getElement();
       // A popup gombjaira (Szerkesztés, Mozgatás, Pozíció mentése, Mégse stb.) kattintva
       // a kattintás alapértelmezetten feljutna a térképig, ami a Leaflet closePopupOnClick
@@ -558,6 +567,13 @@
       L.DomEvent.disableClickPropagation(popupEl);
       const mozgatasBtn = popupEl.querySelector('.mozgatas-gomb');
       if (mozgatasBtn) mozgatasBtn.addEventListener('click', () => mozgatasModValt(marker, tags));
+    });
+    // DIAGNOSZTIKA: ha a popup bezárul, kiírjuk a hívási láncot (stack trace) is --
+    // ebből látszik, hogy a natív X gomb / kattintás-buborékolás zárta-e be, vagy
+    // valami más kód (pl. egy loadGeoJSON-újrarajzolás a clearLayers miatt).
+    marker.on('popupclose', () => {
+      console.log('[DIAG] popupclose', tags.ref || tags.name || '(?)');
+      console.trace('[DIAG] popupclose stack');
     });
     const labelHtml = type.buildLabelHtml(tags);
     if (labelHtml) {
@@ -583,6 +599,13 @@
 
 
   function loadGeoJSON(geojson) {
+    // DIAGNOSZTIKA: ez a függvény TÖRLI és ÚJRAÉPÍTI az összes markert (clearLayers +
+    // addMarker mindenre) -- ha ez épp akkor fut le, amikor valakinek nyitva van egy
+    // popupja (pl. szerkesztés/mozgatás közben), az a nyitott popup markerét is
+    // eltünteti, ami a popup bezáródásaként jelentkezik. A stack trace megmutatja,
+    // MELYIK kód hívta meg (pl. inditas / betoltesIndul / vonal-checkbox váltás).
+    console.log('[DIAG] loadGeoJSON fut -- feature-ök száma:', geojson.features.length);
+    console.trace('[DIAG] loadGeoJSON hívási lánc');
     TYPES.forEach(t => clusterGroups[t.key].clearLayers());
     osszesMarker.length = 0;
     const counts = {};
@@ -694,6 +717,7 @@
   // A közös, GitHub-on tárolt kiegészítő adatfájl betöltése. Nem hiba, ha még nem létezik
   // (404) — ez azt jelenti, hogy még semmit nem mentettünk belőle.
   async function sajatAdatokBetoltese() {
+    console.log('[DIAG] sajatAdatokBetoltese indul');
     try {
       const res = await fetch('./sajat_adatok.ndjson');
       if (!res.ok) {
@@ -709,6 +733,7 @@
           console.warn('Hibás sor a sajat_adatok.ndjson-ban, kihagyva:', sor);
         }
       });
+      console.log('[DIAG] sajatAdatokBetoltese kész, rekordok száma:', sajatAdatokTerkep.size);
     } catch (err) {
       console.warn('sajat_adatok.ndjson betöltése sikertelen:', err);
     }
@@ -734,6 +759,7 @@
   // kiegészítő adatot áthozza a régi elemről, hogy ne vesszen el. Az id nélküli elemek
   // (nem várt eset, de biztonsági háló) egyszerűen egymás mellé kerülnek.
   function featureekOsszefesulese(regiLista, ujLista) {
+    console.log('[DIAG] featureekOsszefesulese: régi=', regiLista.length, 'új=', ujLista.length);
     const idNelkuliek = regiLista.filter(f => !f.properties._osm_id);
     const map = new Map();
     regiLista.forEach(f => { if (f.properties._osm_id) map.set(String(f.properties._osm_id), f); });
@@ -746,7 +772,10 @@
       if (kulcs) map.set(kulcs, f);
       else idNelkuliek.push(f);
     });
-    return [...idNelkuliek, ...Array.from(map.values())];
+    const eredmeny = [...idNelkuliek, ...Array.from(map.values())];
+    console.log('[DIAG] featureekOsszefesulese kész: eredmény=', eredmeny.length,
+      '(id nélküli=', idNelkuliek.length, ', egyedi id=', map.size, ')');
+    return eredmeny;
   }
 
   async function loadLocalSnapshot() {
@@ -759,6 +788,7 @@
   // A ténylegesen megjelenő adatot az aktív vonalak alapján, hálózati kérés nélkül állítja
   // elő az osszesFeature-ből — ezt hívja a checkbox-pipálás is.
   function alkalmazSzurokEsRajzol() {
+    console.log('[DIAG] alkalmazSzurokEsRajzol meghívva, osszesFeature.length=', osszesFeature.length);
     const aktivNevek = new Set(VONALAK.filter(v => v.aktiv).map(v => v.nev));
     // Ha egy elemen nincs _vonal jelölés (pl. régebbi, a vonalankénti lekérés előtti mentésből
     // származik), biztonságból megjelenítjük — jobb, mint véletlenül eltüntetni valamit.
@@ -767,6 +797,7 @@
   }
 
   async function betoltesIndul() {
+    console.log('[DIAG] betoltesIndul meghívva');
     const letoltendok = VONALAK.filter(v => v.aktiv && !letoltottVonalak.has(v.nev));
     if (letoltendok.length === 0) {
       alkalmazSzurokEsRajzol();
@@ -865,6 +896,7 @@
   // Ha a fájl nem érhető el (pl. hiányzik, vagy hibás JSON), a beépített
   // alapértelmezett VONALAK-kal folytatjuk, csak jelezzük a státuszsávban.
   async function inditas() {
+    console.log('[DIAG] inditas() elindult');
     try {
       const res = await fetch('./vonalak.json');
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -886,6 +918,7 @@
       alkalmazSzurokEsRajzol();
       statusEl.textContent = `${sajatAdatokTerkep.size} mentett oszlop betöltve. Válaszd ki a vonalakat, majd "Adatok letöltése" a frissítéshez.`;
     }
+    console.log('[DIAG] inditas() befejeződött');
   }
   inditas();
 
