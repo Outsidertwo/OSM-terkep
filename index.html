@@ -565,7 +565,11 @@
 
   function addMarker(type, lat, lon, tags, memberCount, feature) {
     const marker = L.marker([lat, lon], { icon: makeIcon(type.color, type.shape), draggable: false });
-    marker.bindPopup(popupContent(tags, type, lat, lon));
+    // DIAGNOSZTIKA/TESZT: autoPan kikapcsolva -- gyanú, hogy a Mozgatás-gomb miatt megnövő
+    // popup-tartalom automatikus pásztázást vált ki, ami a klasztercsoportot újraépíti,
+    // és ennek mellékhatásaként záródik be a popup. Ha ez a teszt megoldja a hibát,
+    // ez lesz a bizonyíték -- utána érdemben (nem csak kikapcsolva) kell kezelni.
+    marker.bindPopup(popupContent(tags, type, lat, lon), { autoPan: false });
     marker.on('popupopen', (ev) => {
       console.log('[DIAG] popupopen', tags.ref || tags.name || '(?)', 'marker=', marker);
       const popupEl = ev.popup.getElement();
