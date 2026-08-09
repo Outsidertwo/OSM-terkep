@@ -81,7 +81,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-08-08 -- objektum-mozgatás eltávolítva, diagnosztikai logok';
+  const BUILD_VERZIO = '2026-08-08 -- adatlap előtöltés javítva (_sajat átadása), mozgatás eltávolítva';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -455,7 +455,12 @@
       const tisztaTagek = { ...tags };
       delete tisztaTagek._vonal;
       delete tisztaTagek._sajat;
-      const kodolt = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify({ tagek: tisztaTagek, lat, lon })))));
+      // FONTOS: a _sajat (korábban mentett kiegészítő adatok) NEM törlődik ki a payloadból,
+      // hanem külön mezőként átmegy -- eddig itt veszett el a korábbi mentés az adatlap
+      // megnyitásakor, ezért tűnt úgy, mintha a Mentés gomb "nem csinálna semmit".
+      const payload = { tagek: tisztaTagek, lat, lon };
+      if (tags._sajat) payload.sajat = tags._sajat;
+      const kodolt = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(payload)))));
       gombok = `<div style="margin-top:8px; display:flex; gap:6px;">
         <button onclick="window.open('adatlap.html?adat=${kodolt}', '_blank')"
                 style="font-size:13px; padding:4px 10px; border:1px solid #ccc; border-radius:4px; background:#f0f0f0; cursor:pointer;">

@@ -574,6 +574,55 @@
   let bejovoLat = null;
   let bejovoLon = null;
 
+  // A korábban már elmentett, kiegészítő adatok (sajat_adatok.ndjson-ból) alkalmazása az
+  // űrlapra. Ez a valódi, teljes korábbi állapot -- pontosabb és teljesebb, mint a lenti
+  // ertelmezCimkeSzoveget-es becslés (ami csak a rövid térképi címke szövegéből dolgozik),
+  // ezért ezt HÍVJUK MEG UTOLJÁRA, hogy felülírja azt, ahol átfedés van.
+  //
+  // Két mező igényel különös bánásmódot, mert a formazottRekord() a mentéskor átalakítja
+  // őket: a "lehorgonyzas" almezőit vissza kell fésülni a la_* mezőkbe (és az "oszloplehorgonyzas"
+  // checkboxot true-ra kell állítani, mert maga a kulcs nem szerepel expliciten a mentett
+  // rekordban), a "tavolsag_szelvenyezeshez" pedig "+" előjellel volt elmentve (a szám input
+  // viszont csak "-" előjelet fogadna el, a "+"-t nem, ezért azt itt levágjuk).
+  function alkalmazMentettRekordet(rekord) {
+    if (!rekord) return;
+    const { lehorgonyzas, tartoszerkezetek: mentettTartoszerkezetek, ...egyszeruMezok } = rekord;
+
+    Object.entries(egyszeruMezok).forEach(([kod, ertek]) => {
+      if (!(kod in allapot)) return; // ismeretlen/meta mező (pl. szam-on kívüli extra kulcs) -- kihagyjuk
+      if (kod === 'tavolsag_szelvenyezeshez' && typeof ertek === 'string' && ertek.startsWith('+')) {
+        ertek = ertek.slice(1);
+      }
+      allapot[kod] = ertek;
+    });
+
+    if (lehorgonyzas) {
+      allapot['oszloplehorgonyzas'] = true;
+      if (lehorgonyzas.alaptipus !== undefined) allapot['la_alaptipus'] = lehorgonyzas.alaptipus;
+      if (lehorgonyzas.meret !== undefined) allapot['la_meret'] = lehorgonyzas.meret;
+      if (lehorgonyzas.betonmennyiseg !== undefined) allapot['la_betonmennyiseg'] = lehorgonyzas.betonmennyiseg;
+    }
+
+    if (Array.isArray(mentettTartoszerkezetek)) {
+      tartoszerkezetek.length = 0;
+      mentettTartoszerkezetek.forEach(ts => tartoszerkezetek.push(ts));
+    }
+
+    // Teljes újrarajzolás (ez már a friss tartoszerkezetek-tömböt is figyelembe veszi),
+    // majd az inputok vizuális szinkronizálása -- a kirajzolForma önmagában csak a
+    // rádiógombokat szinkronizálja, checkboxot/szöveget/számot nem.
+    kirajzolForma();
+    document.querySelectorAll('#mezokKontener input[data-kod], #mezokKontener textarea[data-kod]').forEach(el => {
+      const kod = el.dataset.kod;
+      if (!(kod in allapot)) return;
+      if (el.type === 'checkbox') el.checked = !!allapot[kod];
+      else if (el.type !== 'radio') el.value = allapot[kod];
+    });
+    szinkronizaljRadiokat(sema.mezok);
+    frissitGyerekLathatosag();
+    frissitElonezet();
+  }
+
   async function urlParameterbolElotolt() {
     const parameterek = new URLSearchParams(window.location.search);
     const kodolt = parameterek.get('adat') || parameterek.get('tagek'); // 'tagek' = régi formátum, visszafelé kompatibilis
@@ -585,17 +634,20 @@
       console.warn('Nem sikerült értelmezni az URL-paramétert:', err);
       return;
     }
-    // Az új formátum {tagek, lat, lon} — a régi formátum egyenesen a tagek objektum volt.
+    // Az új formátum {tagek, lat, lon, sajat} — a régi formátum egyenesen a tagek objektum volt.
     const tagek = adat.tagek || adat;
     bejovoLat = adat.lat != null ? adat.lat : null;
     bejovoLon = adat.lon != null ? adat.lon : null;
     bejovoOsmId = tagek._osm_id || null;
     const nevSzoveg = tagek.name || tagek.ref;
-    if (!nevSzoveg) return;
-    const nevMezoBemenetEl = document.getElementById('nevMezoBemenet');
-    if (nevMezoBemenetEl) nevMezoBemenetEl.value = nevSzoveg;
-    const eredmeny = ertelmezCimkeSzoveget(nevSzoveg);
-    alkalmazFeszitesiTervEredmenyt(eredmeny);
+    if (nevSzoveg) {
+      const nevMezoBemenetEl = document.getElementById('nevMezoBemenet');
+      if (nevMezoBemenetEl) nevMezoBemenetEl.value = nevSzoveg;
+      const eredmeny = ertelmezCimkeSzoveget(nevSzoveg);
+      alkalmazFeszitesiTervEredmenyt(eredmeny);
+    }
+    // A teljes korábbi mentés (ha van) felülírja a fenti, címke-szövegből visszafejtett becslést.
+    if (adat.sajat) alkalmazMentettRekordet(adat.sajat);
   }
 
   betoltSchema().then(urlParameterbolElotolt);
