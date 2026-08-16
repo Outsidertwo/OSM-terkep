@@ -81,7 +81,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-08-08 -- adatlap előtöltés javítva (_sajat átadása), mozgatás eltávolítva';
+  const BUILD_VERZIO = '2026-08-16 -- offline-first 1. lépés: localStorage-cache a sajat_adatok.ndjson-hoz, háttér-frissítéssel';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -653,10 +653,59 @@
       }));
   }
 
-  // A közös, GitHub-on tárolt kiegészítő adatfájl betöltése. Nem hiba, ha még nem létezik
-  // (404) — ez azt jelenti, hogy még semmit nem mentettünk belőle.
+  // --- Helyi (localStorage) cache a sajat_adatok.ndjson tartalmához ---
+  const NDJSON_CACHE_KULCS = 'sajat_adatok_ndjson_cache';
+  const NDJSON_CACHE_IDOBELYEG_KULCS = 'sajat_adatok_ndjson_cache_ido';
+
+  function ndjsonCacheOlvasas() {
+    try {
+      return localStorage.getItem(NDJSON_CACHE_KULCS);
+    } catch (err) {
+      console.warn('localStorage nem elérhető (olvasás):', err);
+      return null;
+    }
+  }
+
+  function ndjsonCacheIrasa(szoveg) {
+    try {
+      localStorage.setItem(NDJSON_CACHE_KULCS, szoveg);
+      localStorage.setItem(NDJSON_CACHE_IDOBELYEG_KULCS, new Date().toISOString());
+    } catch (err) {
+      // pl. megtelt a tárhely, vagy inkognitó mód -- nem végzetes, csak nem cache-elünk
+      console.warn('localStorage nem elérhető (írás):', err);
+    }
+  }
+
+  // A szöveget feldolgozza és (felülírva a korábbi tartalmat) feltölti a sajatAdatokTerkep-et.
+  function ndjsonSzovegFeldolgozasa(szoveg) {
+    sajatAdatokTerkep.clear();
+    szoveg.split('\n').filter(s => s.trim() !== '').forEach(sor => {
+      try {
+        const rekord = JSON.parse(sor);
+        if (rekord._osm_id) sajatAdatokTerkep.set(String(rekord._osm_id), rekord);
+      } catch (err) {
+        console.warn('Hibás sor a sajat_adatok.ndjson-ban, kihagyva:', sor);
+      }
+    });
+  }
+
+  // A közös, GitHub-on tárolt kiegészítő adatfájl betöltése.
+  // 1. Ha van helyi (localStorage) cache, AZONNAL abból épít -- offline is működik, gyors
+  //    indítás, akkor is, ha a cache régebbi/hiányos.
+  // 2. Hálózat esetén háttérben (nem blokkolva) lekéri a friss fájlt, és csak akkor frissíti
+  //    a cache-t/térképet, ha ténylegesen változott a tartalom.
+  // 3. Ha nincs cache (első indítás ezen az eszközön), meg kell várni a hálózati letöltést.
   async function sajatAdatokBetoltese() {
     console.log('[DIAG] sajatAdatokBetoltese indul');
+    const cachelt = ndjsonCacheOlvasas();
+
+    if (cachelt) {
+      ndjsonSzovegFeldolgozasa(cachelt);
+      console.log('[DIAG] sajatAdatokBetoltese: helyi cache-ből betöltve, rekordok száma:', sajatAdatokTerkep.size);
+      sajatAdatokHatterFrissites(); // nem várjuk meg -- csendben fut, ha van net
+      return;
+    }
+
     try {
       const res = await fetch('./sajat_adatok.ndjson');
       if (!res.ok) {
@@ -664,17 +713,34 @@
         return;
       }
       const szoveg = await res.text();
-      szoveg.split('\n').filter(s => s.trim() !== '').forEach(sor => {
-        try {
-          const rekord = JSON.parse(sor);
-          if (rekord._osm_id) sajatAdatokTerkep.set(String(rekord._osm_id), rekord);
-        } catch (err) {
-          console.warn('Hibás sor a sajat_adatok.ndjson-ban, kihagyva:', sor);
-        }
-      });
-      console.log('[DIAG] sajatAdatokBetoltese kész, rekordok száma:', sajatAdatokTerkep.size);
+      ndjsonSzovegFeldolgozasa(szoveg);
+      ndjsonCacheIrasa(szoveg);
+      console.log('[DIAG] sajatAdatokBetoltese: hálózatról betöltve és cache-elve, rekordok száma:', sajatAdatokTerkep.size);
     } catch (err) {
-      console.warn('sajat_adatok.ndjson betöltése sikertelen:', err);
+      console.warn('sajat_adatok.ndjson betöltése sikertelen (és nincs helyi cache sem):', err);
+    }
+  }
+
+  // Csendes háttér-frissítés: csak akkor ír bármit, ha van hálózat ÉS ténylegesen változott a
+  // tartalom. Hiba esetén (nincs net, stb.) nem jelez semmit -- ez a normál offline eset.
+  async function sajatAdatokHatterFrissites() {
+    try {
+      const res = await fetch('./sajat_adatok.ndjson', { cache: 'no-store' });
+      if (!res.ok) return;
+      const szoveg = await res.text();
+      if (szoveg === ndjsonCacheOlvasas()) {
+        console.log('[DIAG] háttér-frissítés: nincs változás');
+        return;
+      }
+      console.log('[DIAG] háttér-frissítés: változás észlelve, frissítés');
+      ndjsonSzovegFeldolgozasa(szoveg);
+      ndjsonCacheIrasa(szoveg);
+      osszesFeature = featureekOsszefesulese(osszesFeature, sajatAdatokFeatureKent());
+      alkalmazSzurokEsRajzol();
+      statusEl.textContent = `Frissült a mentett adat (${sajatAdatokTerkep.size} oszlop) -- háttérben szinkronizálva.`;
+      statusEl.style.color = '#2a7d2a';
+    } catch (err) {
+      console.log('[DIAG] háttér-frissítés kihagyva (nincs hálózat vagy hiba):', err.message);
     }
   }
 
