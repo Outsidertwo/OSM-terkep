@@ -573,6 +573,8 @@
   let bejovoOsmId = null;
   let bejovoLat = null;
   let bejovoLon = null;
+  let bejovoVonal = null;
+  let bejovoVonalKod = null;
 
   // A korábban már elmentett, kiegészítő adatok (sajat_adatok.ndjson-ból) alkalmazása az
   // űrlapra. Ez a valódi, teljes korábbi állapot -- pontosabb és teljesebb, mint a lenti
@@ -634,11 +636,14 @@
       console.warn('Nem sikerült értelmezni az URL-paramétert:', err);
       return;
     }
-    // Az új formátum {tagek, lat, lon, sajat} — a régi formátum egyenesen a tagek objektum volt.
+    // Az új formátum {tagek, lat, lon, sajat, vonal, vonalKod} — a régi formátum egyenesen
+    // a tagek objektum volt.
     const tagek = adat.tagek || adat;
     bejovoLat = adat.lat != null ? adat.lat : null;
     bejovoLon = adat.lon != null ? adat.lon : null;
     bejovoOsmId = tagek._osm_id || null;
+    bejovoVonal = adat.vonal || null;
+    bejovoVonalKod = adat.vonalKod || null;
     const nevSzoveg = tagek.name || tagek.ref;
     if (nevSzoveg) {
       const nevMezoBemenetEl = document.getElementById('nevMezoBemenet');
@@ -744,19 +749,25 @@
       }
       frissitElonezet();
       // A saját (GitHubra szánt) rekord — az OSM-kompatibilis tagek (a "Generált OSM-tagek"
-      // panelen láthatók) egyelőre külön, kézzel kerülnek fel az OSM-re; ez a gomb a közös
-      // adatfájlt frissíti, amit majd a térkép is beolvas.
+      // panelen láthatók) egyelőre külön, kézzel kerülnek fel az OSM-re; ez a gomb a
+      // vonalhoz tartozó sajat_adatok/{kod}.ndjson fájlt frissíti, amit majd a térkép is
+      // beolvas.
       const rekord = { ...formazottRekord(), tartoszerkezetek: tartoszerkezetek };
       if (bejovoOsmId) rekord._osm_id = bejovoOsmId;
       if (bejovoLat != null) rekord.lat = bejovoLat;
       if (bejovoLon != null) rekord.lon = bejovoLon;
+      if (bejovoVonal) rekord._vonal = bejovoVonal;
       rekord.osm_tagek = osszegyujtOsmTageket();
 
       if (typeof githubMentes !== 'undefined' && githubMentes.tokenVan()) {
+        if (!bejovoVonalKod) {
+          alert('Nem ismert, melyik vonalhoz tartozik ez az oszlop (hiányzó vonal-adat) — a térképről, egy megjelenített vonal elemére kattintva nyisd meg újra a Szerkesztés gombbal.');
+          return;
+        }
         mentesBtnEl.disabled = true;
         mentesBtnEl.textContent = 'Mentés folyamatban...';
         try {
-          await githubMentes.rekordMentese(allapot['szam'], rekord);
+          await githubMentes.rekordMentese(allapot['szam'], rekord, bejovoVonalKod);
           bezarAblakot();
         } catch (err) {
           alert('Nem sikerült menteni a GitHub-ra: ' + err.message + '\n\nEllenőrizd a tokent, vagy próbáld újra.');

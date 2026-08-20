@@ -9,10 +9,17 @@
 
 const githubMentes = (function () {
   const REPO = 'Outsidertwo/OSM-terkep';
-  const FAJL_UTVONAL = 'sajat_adatok.ndjson';
   const BRANCH = 'main';
   const API_BASE = 'https://api.github.com';
   const TAROLO_KULCS = 'github_pat_token';
+
+  // A közös adat vonalanként külön fájlba kerül (sajat_adatok/{kod}.ndjson) -- ez teszi
+  // lehetővé, hogy a térkép csak a ténylegesen megjelenített vonalakhoz tartozó adatot
+  // töltse be, és hogy két vonal egyidejű szerkesztése ne ütközzön egymással GitHub-on.
+  function fajlUtvonal(vonalKod) {
+    if (!vonalKod) throw new Error('Nincs megadva, melyik vonalhoz tartozik a mentendő rekord (vonalKod hiányzik).');
+    return `sajat_adatok/${vonalKod}.ndjson`;
+  }
 
   function tokenBeallitasa(t) { localStorage.setItem(TAROLO_KULCS, t.trim()); }
   function token() { return localStorage.getItem(TAROLO_KULCS); }
@@ -36,10 +43,12 @@ const githubMentes = (function () {
     });
   }
 
-  // Egyetlen rekord mentése/frissítése a közös fájlban. `kulcs` az oszlopszám (vagy bármi
-  // más egyedi azonosító), `rekord` egy sima JS objektum. A fájl már meglévő, más
-  // oszlopokhoz tartozó sorai érintetlenül maradnak.
-  async function rekordMentese(kulcs, rekord) {
+  // Egyetlen rekord mentése/frissítése a vonalhoz tartozó fájlban. `kulcs` az oszlopszám
+  // (vagy bármi más egyedi azonosító), `rekord` egy sima JS objektum, `vonalKod` a vonal
+  // rövid fájlkódja (pl. "120a") -- ez dönti el, melyik sajat_adatok/{kod}.ndjson fájlba
+  // kerül. A fájl már meglévő, más oszlopokhoz tartozó sorai érintetlenül maradnak.
+  async function rekordMentese(kulcs, rekord, vonalKod) {
+    const FAJL_UTVONAL = fajlUtvonal(vonalKod);
     const path = `/repos/${REPO}/contents/${FAJL_UTVONAL}`;
     let sorok = [];
     let sha = null;
@@ -70,7 +79,7 @@ const githubMentes = (function () {
 
     const ujTartalom = ujSorok.join('\n') + '\n';
     const body = {
-      message: `Oszlop ${kulcs} adatainak mentése`,
+      message: `Oszlop ${kulcs} adatainak mentése (${vonalKod})`,
       content: b64Encode(ujTartalom),
       branch: BRANCH
     };
