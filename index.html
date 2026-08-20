@@ -68,7 +68,7 @@
   </button>
 </div>
 <details id="vonalPanel" style="position:absolute; top:194px; left:50px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:14px; max-width:260px;">
-  <summary style="cursor:pointer; font-weight:bold;">Figyelt vonalak</summary>
+  <summary style="cursor:pointer; font-weight:bold;">Megjelenített vonalak</summary>
   <div id="vonalLista" style="margin-top:6px;"></div>
 </details>
 
@@ -81,7 +81,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-08-16 -- offline-first 1. lépés: localStorage-cache a sajat_adatok.ndjson-hoz, háttér-frissítéssel';
+  const BUILD_VERZIO = '2026-08-20 -- offline-first 2. lépés: vonalankénti sajat_adatok/{kod}.ndjson fájlok, "Megjelenített vonalak" átnevezés, _vonal mező a mentett rekordokban';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -163,13 +163,15 @@
 
   const statusEl = document.getElementById('status');
 
-  // A vonalanként (élőben) letöltött, összes elem — ebből szűr a "Figyelt vonalak" panel,
+  // A vonalanként (élőben) letöltött, összes elem — ebből szűr a "Megjelenített vonalak" panel,
   // hálózati kérés nélkül. Minden elem properties._vonal mezője jelzi, melyik vonalhoz
   // tartozik (átfedő vonalaknál egy elem csak az őt ténylegesen tartalmazó vonalhoz tartozik).
   let osszesFeature = [];
   const letoltottVonalak = new Set();
-  // A sajat_adatok.ndjson tartalma _osm_id kulccsal — ez az elsődleges forrás: offline/Overpass
-  // nélkül is ebből rajzolunk, az Overpass-eredmény pedig csak frissíti/kiegészíti.
+  // A sajat_adatok/{kod}.ndjson fájlok együttes tartalma _osm_id kulccsal — ez az elsődleges
+  // forrás: offline/Overpass nélkül is ebből rajzolunk, az Overpass-eredmény pedig csak
+  // frissíti/kiegészíti. Minden rekord saját _vonal mezőt visz magával (nem csak a fájl helye
+  // jelzi a vonalat), hogy szerkesztés/mentés után is egyértelmű maradjon a hovatartozása.
   const sajatAdatokTerkep = new Map();
 
   const osszesMarker = []; // minden létrehozott marker, hogy szükség esetén elérhetők legyenek
@@ -183,16 +185,24 @@
   const CROSSING_GROUP_RADIUS_M = 30;
 
   // ============================================================
-  // FIGYELT VONALAK ÉS ÜZEMELTETŐ
+  // MEGJELENÍTETT VONALAK ÉS ÜZEMELTETŐ
   // A vonalak.json külön fájlból töltődik be induláskor (lásd inditas),
   // hogy bővítéskor / névváltozáskor ne kelljen a kódhoz nyúlni. Ha a
   // fájl valamiért nem érhető el, ez a két érték biztonsági alapértelmezés.
   // ============================================================
   let UZEMELTETO = 'MÁV';
   let VONALAK = [
-    { nev: '120a (Budapest–Szolnok)', relation: 252069, aktiv: true },
-    { nev: '82 (Hatvan–Újszász)', relation: 77374, aktiv: true }
+    { nev: '120a (Budapest–Szolnok)', kod: '120a', relation: 252069, aktiv: true },
+    { nev: '82 (Hatvan–Újszász)', kod: '82', relation: 77374, aktiv: true },
+    { nev: '100 (Budapest–Záhony)', kod: '100', relation: 4481917, aktiv: true }
   ];
+
+  // A vonal rövid fájlnév-kódja — a vonalak.json "kod" mezőjéből, régebbi/hiányos
+  // konfigurációnál biztonsági tartalékként a névből (a zárójel előtti rész) képezve.
+  function vonalKodja(vonal) {
+    return vonal.kod || (vonal.nev || '').split(' ')[0];
+  }
+
 
   // ============================================================
   // TÍPUSDEFINÍCIÓK
@@ -460,6 +470,13 @@
       // megnyitásakor, ezért tűnt úgy, mintha a Mentés gomb "nem csinálna semmit".
       const payload = { tagek: tisztaTagek, lat, lon };
       if (tags._sajat) payload.sajat = tags._sajat;
+      // A vonal-hovatartozás (teljes név + rövid fájlkód) is átmegy, hogy a Mentés gomb
+      // tudja, melyik sajat_adatok/{kod}.ndjson fájlba kell írnia.
+      if (tags._vonal) {
+        payload.vonal = tags._vonal;
+        const vonalObj = VONALAK.find(v => v.nev === tags._vonal);
+        payload.vonalKod = vonalObj ? vonalKodja(vonalObj) : null;
+      }
       const kodolt = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(payload)))));
       gombok = `<div style="margin-top:8px; display:flex; gap:6px;">
         <button onclick="window.open('adatlap.html?adat=${kodolt}', '_blank')"
@@ -590,7 +607,7 @@
   }
 
   // Élő Overpass-lekérdezés VONALANKÉNT (nem összevonva) — ez teszi lehetővé, hogy a
-  // "Figyelt vonalak" pipálás utólag, hálózati kérés nélkül tudjon szűrni, még akkor is,
+  // "Megjelenített vonalak" pipálás utólag, hálózati kérés nélkül tudjon szűrni, még akkor is,
   // ha két vonal fizikailag átfedi egymást (pl. egy csomópontnál).
   function buildOverpassQueryForLine(line) {
     return `
@@ -653,95 +670,113 @@
       }));
   }
 
-  // --- Helyi (localStorage) cache a sajat_adatok.ndjson tartalmához ---
-  const NDJSON_CACHE_KULCS = 'sajat_adatok_ndjson_cache';
-  const NDJSON_CACHE_IDOBELYEG_KULCS = 'sajat_adatok_ndjson_cache_ido';
+  // --- Helyi (localStorage) cache -- vonalanként külön kulcs, vonalanként külön fájl ---
+  function ndjsonCacheKulcs(kod) { return `sajat_adatok_ndjson_cache_${kod}`; }
+  function ndjsonCacheIdobelyegKulcs(kod) { return `sajat_adatok_ndjson_cache_ido_${kod}`; }
 
-  function ndjsonCacheOlvasas() {
+  function ndjsonCacheOlvasas(kod) {
     try {
-      return localStorage.getItem(NDJSON_CACHE_KULCS);
+      return localStorage.getItem(ndjsonCacheKulcs(kod));
     } catch (err) {
       console.warn('localStorage nem elérhető (olvasás):', err);
       return null;
     }
   }
 
-  function ndjsonCacheIrasa(szoveg) {
+  function ndjsonCacheIrasa(kod, szoveg) {
     try {
-      localStorage.setItem(NDJSON_CACHE_KULCS, szoveg);
-      localStorage.setItem(NDJSON_CACHE_IDOBELYEG_KULCS, new Date().toISOString());
+      localStorage.setItem(ndjsonCacheKulcs(kod), szoveg);
+      localStorage.setItem(ndjsonCacheIdobelyegKulcs(kod), new Date().toISOString());
     } catch (err) {
       // pl. megtelt a tárhely, vagy inkognitó mód -- nem végzetes, csak nem cache-elünk
       console.warn('localStorage nem elérhető (írás):', err);
     }
   }
 
-  // A szöveget feldolgozza és (felülírva a korábbi tartalmat) feltölti a sajatAdatokTerkep-et.
+  // A szöveget feldolgozza és a sajatAdatokTerkep-be tölti (a többi, már betöltött vonal
+  // rekordjait nem érinti -- csak hozzáad/felülír _osm_id szerint).
   function ndjsonSzovegFeldolgozasa(szoveg) {
-    sajatAdatokTerkep.clear();
     szoveg.split('\n').filter(s => s.trim() !== '').forEach(sor => {
       try {
         const rekord = JSON.parse(sor);
         if (rekord._osm_id) sajatAdatokTerkep.set(String(rekord._osm_id), rekord);
       } catch (err) {
-        console.warn('Hibás sor a sajat_adatok.ndjson-ban, kihagyva:', sor);
+        console.warn('Hibás sor egy sajat_adatok fájlban, kihagyva:', sor);
       }
     });
   }
 
-  // A közös, GitHub-on tárolt kiegészítő adatfájl betöltése.
-  // 1. Ha van helyi (localStorage) cache, AZONNAL abból épít -- offline is működik, gyors
-  //    indítás, akkor is, ha a cache régebbi/hiányos.
+  // Mely vonalak sajat_adatok/{kod}.ndjson fájlja lett már betöltve (cache-ből vagy
+  // hálózatról) ebben a munkamenetben -- ne töltsük be kétszer feleslegesen.
+  const betoltottSajatVonalak = new Set();
+
+  // Egyetlen vonal sajat_adatok/{kod}.ndjson fájljának betöltése.
+  // 1. Ha van helyi (localStorage) cache erre a vonalra, AZONNAL abból épít -- offline is
+  //    működik, gyors indítás, akkor is, ha a cache régebbi/hiányos.
   // 2. Hálózat esetén háttérben (nem blokkolva) lekéri a friss fájlt, és csak akkor frissíti
   //    a cache-t/térképet, ha ténylegesen változott a tartalom.
-  // 3. Ha nincs cache (első indítás ezen az eszközön), meg kell várni a hálózati letöltést.
-  async function sajatAdatokBetoltese() {
-    console.log('[DIAG] sajatAdatokBetoltese indul');
-    const cachelt = ndjsonCacheOlvasas();
+  // 3. Ha nincs cache (első alkalom ezen a vonalon, ezen az eszközön), meg kell várni a
+  //    hálózati letöltést. 404 esetén nem hiba -- azt jelenti, még nincs adat ezen a vonalon.
+  async function vonalSajatAdatBetoltese(vonal) {
+    const kod = vonalKodja(vonal);
+    if (betoltottSajatVonalak.has(kod)) return;
+    betoltottSajatVonalak.add(kod);
+    console.log('[DIAG] vonalSajatAdatBetoltese indul:', kod);
+    const cachelt = ndjsonCacheOlvasas(kod);
 
     if (cachelt) {
       ndjsonSzovegFeldolgozasa(cachelt);
-      console.log('[DIAG] sajatAdatokBetoltese: helyi cache-ből betöltve, rekordok száma:', sajatAdatokTerkep.size);
-      sajatAdatokHatterFrissites(); // nem várjuk meg -- csendben fut, ha van net
+      console.log('[DIAG] vonalSajatAdatBetoltese: helyi cache-ből betöltve:', kod);
+      vonalSajatAdatHatterFrissites(vonal); // nem várjuk meg -- csendben fut, ha van net
       return;
     }
 
     try {
-      const res = await fetch('./sajat_adatok.ndjson');
+      const res = await fetch(`./sajat_adatok/${kod}.ndjson`);
       if (!res.ok) {
-        if (res.status !== 404) console.warn('sajat_adatok.ndjson nem tölthető be:', res.status);
-        return;
+        if (res.status !== 404) console.warn(`sajat_adatok/${kod}.ndjson nem tölthető be:`, res.status);
+        return; // 404: még nincs regisztrált adat ezen a vonalon -- nem hiba
       }
       const szoveg = await res.text();
       ndjsonSzovegFeldolgozasa(szoveg);
-      ndjsonCacheIrasa(szoveg);
-      console.log('[DIAG] sajatAdatokBetoltese: hálózatról betöltve és cache-elve, rekordok száma:', sajatAdatokTerkep.size);
+      ndjsonCacheIrasa(kod, szoveg);
+      console.log('[DIAG] vonalSajatAdatBetoltese: hálózatról betöltve és cache-elve:', kod);
     } catch (err) {
-      console.warn('sajat_adatok.ndjson betöltése sikertelen (és nincs helyi cache sem):', err);
+      console.warn(`sajat_adatok/${kod}.ndjson betöltése sikertelen (és nincs helyi cache sem):`, err);
     }
   }
 
-  // Csendes háttér-frissítés: csak akkor ír bármit, ha van hálózat ÉS ténylegesen változott a
-  // tartalom. Hiba esetén (nincs net, stb.) nem jelez semmit -- ez a normál offline eset.
-  async function sajatAdatokHatterFrissites() {
+  // Csendes háttér-frissítés egy vonalra: csak akkor ír bármit, ha van hálózat ÉS
+  // ténylegesen változott a tartalom. Hiba esetén (nincs net, stb.) nem jelez semmit --
+  // ez a normál offline eset.
+  async function vonalSajatAdatHatterFrissites(vonal) {
+    const kod = vonalKodja(vonal);
     try {
-      const res = await fetch('./sajat_adatok.ndjson', { cache: 'no-store' });
+      const res = await fetch(`./sajat_adatok/${kod}.ndjson`, { cache: 'no-store' });
       if (!res.ok) return;
       const szoveg = await res.text();
-      if (szoveg === ndjsonCacheOlvasas()) {
-        console.log('[DIAG] háttér-frissítés: nincs változás');
+      if (szoveg === ndjsonCacheOlvasas(kod)) {
+        console.log('[DIAG] háttér-frissítés (%s): nincs változás', kod);
         return;
       }
-      console.log('[DIAG] háttér-frissítés: változás észlelve, frissítés');
+      console.log('[DIAG] háttér-frissítés (%s): változás észlelve, frissítés', kod);
       ndjsonSzovegFeldolgozasa(szoveg);
-      ndjsonCacheIrasa(szoveg);
+      ndjsonCacheIrasa(kod, szoveg);
       osszesFeature = featureekOsszefesulese(osszesFeature, sajatAdatokFeatureKent());
       alkalmazSzurokEsRajzol();
-      statusEl.textContent = `Frissült a mentett adat (${sajatAdatokTerkep.size} oszlop) -- háttérben szinkronizálva.`;
+      statusEl.textContent = `Frissült a(z) ${vonal.nev} mentett adata -- háttérben szinkronizálva.`;
       statusEl.style.color = '#2a7d2a';
     } catch (err) {
-      console.log('[DIAG] háttér-frissítés kihagyva (nincs hálózat vagy hiba):', err.message);
+      console.log(`[DIAG] háttér-frissítés kihagyva (${kod}, nincs hálózat vagy hiba):`, err.message);
     }
+  }
+
+  // A közös, GitHub-on tárolt kiegészítő adatfájlok betöltése -- az összes jelenleg
+  // aktív (megjelenített) vonalra, párhuzamosan.
+  async function sajatAdatokBetoltese() {
+    console.log('[DIAG] sajatAdatokBetoltese indul');
+    await Promise.all(VONALAK.filter(v => v.aktiv).map(v => vonalSajatAdatBetoltese(v)));
+    console.log('[DIAG] sajatAdatokBetoltese kész, rekordok száma összesen:', sajatAdatokTerkep.size);
   }
 
   // A sajatAdatokTerkep tartalmából épít geojson feature-öket (csak azokból a rekordokból,
@@ -752,7 +787,7 @@
       if (rekord.lat == null || rekord.lon == null) return;
       feats.push({
         type: 'Feature',
-        properties: { ...(rekord.osm_tagek || {}), _osm_id: Number(osmId), _sajat: rekord },
+        properties: { ...(rekord.osm_tagek || {}), _vonal: rekord._vonal, _osm_id: Number(osmId), _sajat: rekord },
         geometry: { type: 'Point', coordinates: [rekord.lon, rekord.lat] }
       });
     });
@@ -870,7 +905,7 @@
     };
   }
 
-  // --- Figyelt vonalak panel: pipálható lista, változtatáskor újratölti az adatot ---
+  // --- Megjelenített vonalak panel: pipálható lista, változtatáskor újratölti az adatot ---
   const vonalListaEl = document.getElementById('vonalLista');
   function vonalListaKirajzolas() {
     vonalListaEl.innerHTML = `
@@ -884,15 +919,25 @@
     vonalListaEl.querySelectorAll('input[type="checkbox"]').forEach(cb => {
       cb.addEventListener('change', (ev) => {
         const idx = Number(ev.target.dataset.vonalIndex);
-        VONALAK[idx].aktiv = ev.target.checked;
+        const vonal = VONALAK[idx];
+        vonal.aktiv = ev.target.checked;
         if (VONALAK.every(v => !v.aktiv)) {
           statusEl.textContent = 'Legalább egy vonalat aktívnak kell hagyni.';
           statusEl.style.color = 'red';
           ev.target.checked = true;
-          VONALAK[idx].aktiv = true;
+          vonal.aktiv = true;
           return;
         }
-        alkalmazSzurokEsRajzol(); // csak szűrés a már betöltött adaton, nincs új hálózati kérés
+        if (vonal.aktiv && !betoltottSajatVonalak.has(vonalKodja(vonal))) {
+          // Most bepipált, még be nem töltött vonal -- betöltjük a sajat_adatok fájlját
+          // (cache-ből vagy hálózatról), mielőtt szűrünk/rajzolunk.
+          vonalSajatAdatBetoltese(vonal).then(() => {
+            osszesFeature = featureekOsszefesulese(osszesFeature, sajatAdatokFeatureKent());
+            alkalmazSzurokEsRajzol();
+          });
+        } else {
+          alkalmazSzurokEsRajzol(); // csak szűrés a már betöltött adaton, nincs új hálózati kérés
+        }
       });
     });
   }
