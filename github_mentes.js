@@ -97,5 +97,64 @@ const githubMentes = (function () {
     return await putValasz.json();
   }
 
-  return { tokenBeallitasa, token, tokenVan, tokenTorlese, rekordMentese };
+  // Több új rekord egyszeri, kötegelt beszúrása egy vonal fájljába (pl. Overpass-regisztráció).
+  // FONTOS: ez INSERT-ONLY -- csak azokat a rekordokat írja be, amelyek _osm_id-ja MÉG NEM
+  // szerepel a fájlban. A már meglévő rekordokat egyáltalán nem érinti, még akkor sem, ha az
+  // ujRekordok listában van egy azonos _osm_id-jú, eltérő tartalmú elem -- azt egyszerűen
+  // kihagyja. Ha nincs egyetlen ténylegesen új rekord sem, nem hív PUT-ot (nincs üres commit).
+  async function ujRekordokKotegeltMentese(ujRekordok, vonalKod) {
+    const FAJL_UTVONAL = fajlUtvonal(vonalKod);
+    const path = `/repos/${REPO}/contents/${FAJL_UTVONAL}`;
+    let sorok = [];
+    let sha = null;
+
+    const getValasz = await githubFetch(`${path}?ref=${BRANCH}`, { method: 'GET' });
+    if (getValasz.status === 200) {
+      const adat = await getValasz.json();
+      sha = adat.sha;
+      const szoveg = b64Decode(adat.content.replace(/\n/g, ''));
+      sorok = szoveg.split('\n').filter(s => s.trim() !== '');
+    } else if (getValasz.status !== 404) {
+      const hibaSzoveg = await getValasz.text().catch(() => '');
+      throw new Error(`Nem sikerült lekérni a jelenlegi fájlt (${getValasz.status}): ${hibaSzoveg}`);
+    }
+    // 404 esetén a fájl még nem létezik -- üres sorlistával indulunk, majd létrejön.
+
+    const meglevoOsmIdk = new Set();
+    sorok.forEach(sor => {
+      try {
+        const obj = JSON.parse(sor);
+        if (obj._osm_id) meglevoOsmIdk.add(String(obj._osm_id));
+      } catch (err) {
+        // Hibás/értelmezhetetlen sor -- az azonosító-gyűjtésből kimarad, de a sor megmarad.
+      }
+    });
+
+    const beirando = ujRekordok.filter(r => r._osm_id && !meglevoOsmIdk.has(String(r._osm_id)));
+    if (beirando.length === 0) {
+      return { ujSorokSzama: 0 };
+    }
+
+    const ujSorok = sorok.concat(beirando.map(r => JSON.stringify(r)));
+    const ujTartalom = ujSorok.join('\n') + '\n';
+    const body = {
+      message: `${beirando.length} új oszlop regisztrálása Overpass-ból (${vonalKod})`,
+      content: b64Encode(ujTartalom),
+      branch: BRANCH
+    };
+    if (sha) body.sha = sha;
+
+    const putValasz = await githubFetch(path, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!putValasz.ok) {
+      const hibaSzoveg = await putValasz.text().catch(() => '');
+      throw new Error(`Nem sikerült menteni a fájlt (${putValasz.status}): ${hibaSzoveg}`);
+    }
+    return { ujSorokSzama: beirando.length, valasz: await putValasz.json() };
+  }
+
+  return { tokenBeallitasa, token, tokenVan, tokenTorlese, rekordMentese, ujRekordokKotegeltMentese };
 })();

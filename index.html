@@ -81,7 +81,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-08-20 -- offline-first 2. lépés: vonalankénti sajat_adatok/{kod}.ndjson fájlok, "Megjelenített vonalak" átnevezés, _vonal mező a mentett rekordokban';
+  const BUILD_VERZIO = '2026-08-20 -- Overpass-regisztráció (insert-only, bejelentkezett usernek), vonal-adatállapot jelzés';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -147,6 +147,7 @@
       osmBejelentkezesLink.title = 'Bejelentkezés OSM-mel';
       osmBejelentkezesLink.onOsmClick = () => osmAuth.bejelentkezes();
       osmSzerkesztesEngedelyezve = false;
+      if (typeof vonalListaKirajzolas === 'function' && VONALAK.length) vonalListaKirajzolas();
       return;
     }
     osmBejelentkezesLink.textContent = '🔓';
@@ -156,6 +157,8 @@
       location.reload(); // hogy a már megnyitott popupokból is eltűnjön a Szerkesztés/Mozgatás gomb
     };
     osmSzerkesztesEngedelyezve = true;
+    if (typeof vonalListaKirajzolas === 'function' && VONALAK.length) vonalListaKirajzolas();
+    if (typeof osszesVonalAdatAllapotBetoltese === 'function') osszesVonalAdatAllapotBetoltese();
     osmAuth.sajatAdatok()
       .then(u => { osmBejelentkezesLink.title = 'Bejelentkezve mint: ' + u.display_name + ' — kattints a kijelentkezéshez'; })
       .catch(() => { /* a gomb ekkor is működik, csak a névvel nem tudunk kiegészülni */ });
@@ -906,16 +909,44 @@
   }
 
   // --- Megjelenített vonalak panel: pipálható lista, változtatáskor újratölti az adatot ---
+  // Bejelentkezett OSM-felhasználónak (osmSzerkesztesEngedelyezve) minden vonal mellett
+  // megjelenik egy "Overpass lekérdezés" gomb is -- ez egy RITKA, kézzel indított,
+  // INSERT-ONLY regisztrációs művelet (lásd vonalRegisztracioIndul), nem a rendszeres
+  // adatforrás. Sima (nem bejelentkezett) felhasználó ezt egyáltalán nem látja.
   const vonalListaEl = document.getElementById('vonalLista');
+
+  // Egy vonalnak van-e már mentett adata -- csak akkor ad választ, ha a vonal sajat_adatok
+  // fájlját már megpróbáltuk betölteni (lásd osszesVonalAdatAllapotBetoltese), különben
+  // null-t ad vissza ("még nem tudjuk"), hogy ne jelezzünk tévesen "nincs adat"-ot.
+  function vonalVanEAdat(vonal) {
+    if (!betoltottSajatVonalak.has(vonalKodja(vonal))) return null;
+    for (const rekord of sajatAdatokTerkep.values()) {
+      if (rekord._vonal === vonal.nev) return true;
+    }
+    return false;
+  }
+
   function vonalListaKirajzolas() {
     vonalListaEl.innerHTML = `
       <div style="margin-bottom:6px; color:#555;">Üzemeltető: <strong>${escapeHtml(UZEMELTETO)}</strong> (a vonalak.json-ban módosítható)</div>
-      ` + VONALAK.map((v, i) => `
-      <label style="display:block; white-space:nowrap;">
-        <input type="checkbox" data-vonal-index="${i}" ${v.aktiv ? 'checked' : ''} />
-        ${escapeHtml(v.nev)}
-      </label>
-    `).join('');
+      ` + VONALAK.map((v, i) => {
+        const vanAdat = vonalVanEAdat(v);
+        const jelzes = vanAdat === false
+          ? '<span style="color:#b36b00; font-size:12px;" title="Ezen a vonalon még nincs regisztrált oszlop">⚠ még nincs adat</span>'
+          : '';
+        const overpassGomb = osmSzerkesztesEngedelyezve
+          ? `<button data-vonal-regisztracio="${i}" style="font-size:11px; padding:2px 6px; margin-left:6px; border:1px solid #ccc; border-radius:4px; background:#f7f7f7; cursor:pointer;">Overpass lekérdezés</button>`
+          : '';
+        return `
+      <div style="margin-bottom:2px;">
+        <label style="white-space:nowrap;">
+          <input type="checkbox" data-vonal-index="${i}" ${v.aktiv ? 'checked' : ''} />
+          ${escapeHtml(v.nev)}
+        </label>
+        ${jelzes}${overpassGomb}
+      </div>`;
+      }).join('');
+
     vonalListaEl.querySelectorAll('input[type="checkbox"]').forEach(cb => {
       cb.addEventListener('change', (ev) => {
         const idx = Number(ev.target.dataset.vonalIndex);
@@ -940,6 +971,91 @@
         }
       });
     });
+
+    vonalListaEl.querySelectorAll('button[data-vonal-regisztracio]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.vonalRegisztracio);
+        vonalRegisztracioIndul(VONALAK[idx], btn);
+      });
+    });
+  }
+
+  // Induláskor (csak bejelentkezett állapotban) minden vonal sajat_adatok fájlját megnézi --
+  // NEM csak az aktívakat -- hogy a panelen látszódjon, melyik vonalon nincs még regisztrált
+  // adat ("⚠ még nincs adat"). Ez pusztán tájékoztató célú, nem tölt be semmit a térképre a
+  // nem aktív vonalakról (a szűrés továbbra is csak az aktív vonalakat rajzolja ki).
+  async function osszesVonalAdatAllapotBetoltese() {
+    if (!osmSzerkesztesEngedelyezve) return;
+    await Promise.all(VONALAK.map(v => vonalSajatAdatBetoltese(v)));
+    vonalListaKirajzolas();
+  }
+
+  // Egyetlen vonal Overpass-regisztrációja: lekéri az összes csomópontot a vonal
+  // reláció-azonosítója alapján, és INSERT-ONLY módon (lásd github_mentes.js) beírja a
+  // sajat_adatok/{kod}.ndjson fájlba azokat, amiknek _osm_id-ja MÉG NEM szerepel benne.
+  // A meglévő, már felmért/szerkesztett rekordokat egyáltalán nem érinti.
+  async function vonalRegisztracioIndul(vonal, gombEl) {
+    if (typeof githubMentes === 'undefined' || !githubMentes.tokenVan()) {
+      alert('Az Overpass-regisztrációhoz be kell állítani a GitHub tokent -- nyiss meg egy oszlopot Szerkesztésre, ott az adatlapon található a token-beállítás.');
+      return;
+    }
+    const eredetiSzoveg = gombEl.textContent;
+    gombEl.disabled = true;
+    gombEl.textContent = 'Lekérdezés...';
+    statusEl.style.color = '';
+    statusEl.textContent = `Overpass-regisztráció indul: ${vonal.nev}...`;
+
+    try {
+      // Előbb biztosan betöltjük a vonal jelenlegi sajat_adatok tartalmát, hogy pontosan
+      // tudjuk, mely _osm_id-k szerepelnek már benne (insert-only döntéshez).
+      await vonalSajatAdatBetoltese(vonal);
+
+      const data = await fetchOverpassWithFallback(buildOverpassQueryForLine(vonal));
+      const csomopontok = data.elements.filter(el => el.type === 'node');
+
+      const kod = vonalKodja(vonal);
+      const ujRekordok = csomopontok
+        .filter(node => !sajatAdatokTerkep.has(String(node.id)))
+        .map(node => ({
+          szam: (node.tags && node.tags.ref) ? node.tags.ref : String(node.id),
+          _osm_id: node.id,
+          lat: node.lat,
+          lon: node.lon,
+          osm_tagek: node.tags || {},
+          _vonal: vonal.nev,
+          tartoszerkezetek: []
+        }));
+
+      if (ujRekordok.length === 0) {
+        statusEl.textContent = `Overpass-regisztráció (${vonal.nev}): nincs új oszlop, minden csomópont már szerepel.`;
+        statusEl.style.color = '#555';
+        return;
+      }
+
+      statusEl.textContent = `Overpass-regisztráció (${vonal.nev}): ${ujRekordok.length} új oszlop mentése GitHub-ra...`;
+      const eredmeny = await githubMentes.ujRekordokKotegeltMentese(ujRekordok, kod);
+
+      // Helyi állapot (memória + cache) frissítése, hogy a térkép azonnal, hálózati
+      // újratöltés nélkül mutassa az új oszlopokat.
+      ujRekordok.forEach(r => sajatAdatokTerkep.set(String(r._osm_id), r));
+      const vonalOsszesRekordja = [];
+      sajatAdatokTerkep.forEach(r => { if (r._vonal === vonal.nev) vonalOsszesRekordja.push(JSON.stringify(r)); });
+      ndjsonCacheIrasa(kod, vonalOsszesRekordja.join('\n') + '\n');
+
+      osszesFeature = featureekOsszefesulese(osszesFeature, sajatAdatokFeatureKent());
+      alkalmazSzurokEsRajzol();
+
+      statusEl.textContent = `Overpass-regisztráció (${vonal.nev}) kész: ${eredmeny.ujSorokSzama} új oszlop mentve.`;
+      statusEl.style.color = '#2a7d2a';
+      vonalListaKirajzolas(); // a "⚠ még nincs adat" jelzés eltűnjön, ha ez volt az első regisztráció
+    } catch (err) {
+      console.warn('Overpass-regisztráció sikertelen:', vonal.nev, err);
+      statusEl.textContent = `Overpass-regisztráció sikertelen (${vonal.nev}): ${err.message}`;
+      statusEl.style.color = 'red';
+    } finally {
+      gombEl.disabled = false;
+      gombEl.textContent = eredetiSzoveg;
+    }
   }
 
   // Induláskor: előbb a vonalak.json betöltése, utána az adatlekérés.
