@@ -455,7 +455,11 @@
   }
 
   function osszegyujtOsmTageket() {
-    let tagek = {};
+    // Ez az adatlap kizárólag felsővezeték-oszlopokhoz készült, ezért a power=catenary_mast
+    // MINDIG fix, alapértelmezett tag -- nincs hozzá kitöltendő mező, és semmilyen mentés
+    // nem törölheti (korábban ez hiányzott, emiatt egy Mentés után az oszlop eltűnt a térkép
+    // normál rétegéből, mert a klasszifikáció ezen a tagen múlik).
+    let tagek = { power: 'catenary_mast' };
     function feldolgoz(mezok) {
       mezok.forEach(m => {
         if (m.tipus === 'checkbox') {
