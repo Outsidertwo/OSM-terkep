@@ -72,6 +72,9 @@
   <div id="vonalLista" style="margin-top:6px;"></div>
 </details>
 <div id="pendingSzamlalo" style="position:absolute; top:194px; left:320px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:13px; font-weight:bold; max-width:260px;"></div>
+<button id="feltoltesBtn" style="display:none; position:absolute; top:238px; left:320px; z-index:1000; padding:6px 12px; border-radius:4px; border:1px solid #ccc; background:#eef4ff; font-size:14px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.4);">
+  Változások feltöltése
+</button>
 
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -83,7 +86,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-08-22 -- 3. lépés: helyi (pending) mentés-folyamat, mentetlen-módosítás számláló, beforeunload és cross-tab frissítés';
+  const BUILD_VERZIO = '2026-08-22 -- 4. lépés: kötegelt "Változások feltöltése" gomb (vonalankénti commit, 409-nél automatikus újrapróbálkozás)';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -824,8 +827,10 @@
   // elején, illetve cross-tab storage-eseményre).
   function pendingSzamlaloFrissites() {
     const el = document.getElementById('pendingSzamlalo');
+    const feltoltesBtnEl = document.getElementById('feltoltesBtn');
     if (!el || typeof githubMentes === 'undefined') return;
     const darab = githubMentes.pendingDarab();
+    if (feltoltesBtnEl) feltoltesBtnEl.style.display = darab > 0 ? '' : 'none';
     if (darab === 0) {
       el.textContent = '';
       return;
@@ -1111,6 +1116,87 @@
       gombEl.textContent = eredetiSzoveg;
     }
   }
+
+  // --- Kötegelt feltöltés -- 4. lépés, offline-first átalakítás ---
+  //
+  // A "Változások feltöltése" gomb: a pending_valtozasok (localStorage) tartalmát vonalKod
+  // szerint csoportosítva, vonalanként külön kötegelt GitHub-commitban tölti fel (egy commit
+  // csak egy fájlt érinthet, ezért ahány vonalon van mentetlen módosítás, annyi külön
+  // PUT-hívás történik). Részleges hiba esetén a sikertelen vonal(ak) tételei a
+  // pending-listában maradnak, a sikeresek törlődnek -- semmi nem veszhet el.
+  async function feltoltesIndul() {
+    const feltoltesBtnEl = document.getElementById('feltoltesBtn');
+    if (typeof githubMentes === 'undefined' || !githubMentes.tokenVan()) {
+      alert('A feltöltéshez be kell állítani a GitHub tokent -- nyiss meg egy oszlopot Szerkesztésre, ott az adatlapon található a token-beállítás.');
+      return;
+    }
+    const pending = githubMentes.pendingOlvasas();
+    const osmIdk = Object.keys(pending);
+    if (osmIdk.length === 0) return;
+
+    // Csoportosítás vonalKod szerint.
+    const vonalankent = new Map(); // vonalKod -> [{ osmId, rekord }, ...]
+    osmIdk.forEach(osmId => {
+      const p = pending[osmId];
+      if (!vonalankent.has(p.vonalKod)) vonalankent.set(p.vonalKod, []);
+      vonalankent.get(p.vonalKod).push({ osmId, rekord: p.rekord });
+    });
+
+    const eredetiSzoveg = feltoltesBtnEl.textContent;
+    feltoltesBtnEl.disabled = true;
+    statusEl.style.color = '';
+
+    const sikeresVonalak = [];
+    const sikertelenVonalak = []; // { vonalKod, hiba }
+
+    for (const [vonalKod, tetelek] of vonalankent) {
+      feltoltesBtnEl.textContent = `Feltöltés (${vonalKod})...`;
+      statusEl.textContent = `Változások feltöltése: ${vonalKod} (${tetelek.length} oszlop)...`;
+      try {
+        await githubMentes.pendingFeltoltesVonalra(vonalKod, tetelek);
+
+        // Sikeres feltöltés után törli a pending-listából az adott vonal tételeit, és
+        // frissíti a helyi (memória + cache) állapotot, hogy a térkép azonnal a feltöltött
+        // tartalmat mutassa, ne a régi GitHub-cache-t.
+        tetelek.forEach(({ osmId, rekord }) => {
+          githubMentes.pendingTorles(osmId);
+          sajatAdatokTerkep.set(String(osmId), rekord);
+        });
+        const vonal = VONALAK.find(v => vonalKodja(v) === vonalKod);
+        if (vonal) {
+          const vonalOsszesRekordja = [];
+          sajatAdatokTerkep.forEach(r => { if (r._vonal === vonal.nev) vonalOsszesRekordja.push(JSON.stringify(r)); });
+          ndjsonCacheIrasa(vonalKod, vonalOsszesRekordja.join('\n') + '\n');
+        }
+
+        sikeresVonalak.push(vonalKod);
+      } catch (err) {
+        console.warn('Kötegelt feltöltés sikertelen:', vonalKod, err);
+        sikertelenVonalak.push({ vonalKod, hiba: err.message });
+        // A pending-lista ezen vonalhoz tartozó tételei ÉRINTETLENÜL maradnak -- semmi nem
+        // veszhet el egy sikertelen feltöltés miatt.
+      }
+    }
+
+    osszesFeature = featureekOsszefesulese(osszesFeature, sajatAdatokFeatureKent());
+    alkalmazSzurokEsRajzol(); // ez automatikusan frissíti a pendingSzamlalot is
+
+    feltoltesBtnEl.disabled = false;
+    feltoltesBtnEl.textContent = eredetiSzoveg;
+
+    if (sikertelenVonalak.length === 0) {
+      statusEl.textContent = `Változások feltöltve: ${sikeresVonalak.join(', ')}.`;
+      statusEl.style.color = '#2a7d2a';
+    } else {
+      const hibaLista = sikertelenVonalak.map(s => `${s.vonalKod}: ${s.hiba}`).join('; ');
+      statusEl.textContent = (sikeresVonalak.length > 0 ? `Feltöltve: ${sikeresVonalak.join(', ')}. ` : '') +
+        `Sikertelen (a mentetlen módosítás megmaradt): ${hibaLista}`;
+      statusEl.style.color = 'red';
+    }
+  }
+
+  const feltoltesGombEl = document.getElementById('feltoltesBtn');
+  if (feltoltesGombEl) feltoltesGombEl.addEventListener('click', feltoltesIndul);
 
   // Induláskor: előbb a vonalak.json betöltése, utána az adatlekérés.
   // Ha a fájl nem érhető el (pl. hiányzik, vagy hibás JSON), a beépített

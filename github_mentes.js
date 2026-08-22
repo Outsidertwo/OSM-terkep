@@ -207,8 +207,68 @@ const githubMentes = (function () {
     return Object.keys(pendingOlvasas()).length;
   }
 
+  // --- Kötegelt feltöltés -- 4. lépés, offline-first átalakítás ---
+  //
+  // A pending-listából egy adott vonalhoz tartozó összes rekord egyetlen kötegelt feltöltése.
+  // Mindig a LEGFRISSEBB GitHub-tartalmat kéri le (nem a localStorage-cache-elt verziót),
+  // hogy ne írjon felül közben történt (pl. Overpass-regisztrációból vagy másik eszközről
+  // származó) változást. SHA-ütközés (409) esetén automatikusan újrapróbálkozik (max.
+  // maxProbalkozas alkalommal), minden alkalommal friss tartalomra alkalmazva a
+  // pending-rekordokat. Sikeres feltöltés után a HÍVÓ felelőssége törölni a feltöltött
+  // tételeket a pending-listából (pendingTorles) -- ez a függvény önmagában nem nyúl a
+  // pending-listához, csak a GitHub-fájlt írja.
+  //
+  // pendingRekordokEhhezAVonalhoz: [{ osmId, rekord }, ...]
+  async function pendingFeltoltesVonalra(vonalKod, pendingRekordokEhhezAVonalhoz, maxProbalkozas = 3) {
+    const path = `/repos/${REPO}/contents/${fajlUtvonal(vonalKod)}`;
+    for (let probalkozas = 1; probalkozas <= maxProbalkozas; probalkozas++) {
+      const getValasz = await githubFetch(`${path}?ref=${BRANCH}`, { method: 'GET' });
+      let sorok = [];
+      let sha = null;
+      if (getValasz.status === 200) {
+        const adat = await getValasz.json();
+        sha = adat.sha;
+        sorok = b64Decode(adat.content.replace(/\n/g, '')).split('\n').filter(s => s.trim() !== '');
+      } else if (getValasz.status !== 404) {
+        const hibaSzoveg = await getValasz.text().catch(() => '');
+        throw new Error(`Nem sikerült lekérni a jelenlegi fájlt (${getValasz.status}): ${hibaSzoveg}`);
+      }
+      // 404 esetén a fájl még nem létezik -- üres sorlistával indulunk, majd létrejön.
+
+      // Pending rekordok ráillesztése: _osm_id szerint felülír vagy hozzáfűz. A fájl többi
+      // sorát (amit nem érintett a pending) változatlanul hagyja.
+      const osmIdKulcsSzerint = new Map(); // _osm_id -> sorindex
+      sorok.forEach((sor, i) => {
+        try { const o = JSON.parse(sor); if (o._osm_id) osmIdKulcsSzerint.set(String(o._osm_id), i); }
+        catch (e) { /* hibás sor, kihagyva az indexelésből, de a sor megmarad érintetlenül */ }
+      });
+      pendingRekordokEhhezAVonalhoz.forEach(({ osmId, rekord }) => {
+        const idx = osmIdKulcsSzerint.get(String(osmId));
+        if (idx != null) sorok[idx] = JSON.stringify(rekord);
+        else sorok.push(JSON.stringify(rekord));
+      });
+
+      const body = {
+        message: `${pendingRekordokEhhezAVonalhoz.length} oszlop módosítása feltöltve (${vonalKod})`,
+        content: b64Encode(sorok.join('\n') + '\n'),
+        branch: BRANCH
+      };
+      if (sha) body.sha = sha;
+
+      const putValasz = await githubFetch(path, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (putValasz.ok) return await putValasz.json();
+      if (putValasz.status === 409 && probalkozas < maxProbalkozas) continue; // SHA-ütközés -- újrapróbál
+      const hibaSzoveg = await putValasz.text().catch(() => '');
+      throw new Error(`Feltöltés sikertelen (${putValasz.status}) ${maxProbalkozas} próbálkozás után: ${hibaSzoveg}`);
+    }
+  }
+
   return {
     tokenBeallitasa, token, tokenVan, tokenTorlese, rekordMentese, ujRekordokKotegeltMentese,
-    pendingOlvasas, pendingMentese, pendingTorles, pendingDarab
+    pendingOlvasas, pendingMentese, pendingTorles, pendingDarab, pendingFeltoltesVonalra
   };
 })();

@@ -1,0 +1,436 @@
+diff --git a/adatlap_motor.js b/adatlap_motor.js
+index 316b733..77b0fef 100644
+--- a/adatlap_motor.js
++++ b/adatlap_motor.js
+@@ -714,11 +714,13 @@
+   function githubTokenAllapotFrissit() {
+     const allapotEl = document.getElementById('githubTokenAllapot');
+     if (!allapotEl) return;
++    // A token mostantól csak a kötegelt "Változások feltöltése" gombhoz kell (4. lépés) --
++    // a Mentés gomb itt az adatlapon mindig helyi (localStorage) pufferbe ír, token nélkül is.
+     if (typeof githubMentes !== 'undefined' && githubMentes.tokenVan()) {
+-      allapotEl.textContent = 'Token beállítva — a Mentés gomb közvetlenül a közös fájlba ír.';
++      allapotEl.textContent = 'Token beállítva (a kötegelt feltöltéshez kell majd) — a Mentés gomb helyben, a böngészőben menti a módosítást.';
+       allapotEl.style.color = '#2d6a2d';
+     } else {
+-      allapotEl.textContent = 'Nincs token beállítva — a Mentés gomb egyelőre fájlt tölt le.';
++      allapotEl.textContent = 'A Mentés gomb helyben, a böngészőben menti a módosítást -- a GitHub-ra feltöltés a térkép "Változások feltöltése" gombjával történik majd.';
+       allapotEl.style.color = '#888';
+     }
+   }
+@@ -763,34 +765,28 @@
+       if (bejovoVonal) rekord._vonal = bejovoVonal;
+       rekord.osm_tagek = osszegyujtOsmTageket();
+ 
+-      if (typeof githubMentes !== 'undefined' && githubMentes.tokenVan()) {
+-        if (!bejovoVonalKod) {
+-          alert('Nem ismert, melyik vonalhoz tartozik ez az oszlop (hiányzó vonal-adat) — a térképről, egy megjelenített vonal elemére kattintva nyisd meg újra a Szerkesztés gombbal.');
+-          return;
+-        }
+-        mentesBtnEl.disabled = true;
+-        mentesBtnEl.textContent = 'Mentés folyamatban...';
+-        try {
+-          await githubMentes.rekordMentese(allapot['szam'], rekord, bejovoVonalKod);
+-          bezarAblakot();
+-        } catch (err) {
+-          alert('Nem sikerült menteni a GitHub-ra: ' + err.message + '\n\nEllenőrizd a tokent, vagy próbáld újra.');
+-          mentesBtnEl.disabled = false;
+-          mentesBtnEl.textContent = 'Mentés';
+-        }
++      // A Mentés gomb mostantól MINDIG helyben (localStorage, pending-lista) ment -- token-
++      // független, GitHub-hívás nélkül. A GitHub csak a térkép "Változások feltöltése"
++      // gombjával, kötegelten frissül majd (4. lépés).
++      if (!bejovoOsmId) {
++        alert('Nem ismert ennek az oszlopnak az OSM-azonosítója -- a térképről, egy megjelenített vonal elemére kattintva nyisd meg újra a Szerkesztés gombbal.');
++        return;
++      }
++      if (!bejovoVonalKod) {
++        alert('Nem ismert, melyik vonalhoz tartozik ez az oszlop -- a térképről, egy megjelenített vonal elemére kattintva nyisd meg újra a Szerkesztés gombbal.');
++        return;
++      }
++      if (typeof githubMentes === 'undefined') {
++        alert('A mentéshez szükséges modul nem érhető el ezen az oldalon (github_mentes.js hiányzik).');
+         return;
+       }
+ 
+-      // Nincs beállítva GitHub token — fájlba mentünk letöltésként (kézzel bemásolható a repóba).
+-      const fajlnev = (allapot['szam'] || 'oszlop') + '.json';
+-      const blob = new Blob([JSON.stringify(rekord, null, 2)], { type: 'application/json' });
+-      const url = URL.createObjectURL(blob);
+-      const a = document.createElement('a');
+-      a.href = url;
+-      a.download = fajlnev;
+-      a.click();
+-      URL.revokeObjectURL(url);
+-      bezarAblakot();
++      try {
++        githubMentes.pendingMentese(bejovoOsmId, rekord, bejovoVonalKod);
++        bezarAblakot();
++      } catch (err) {
++        alert('Nem sikerült helyileg elmenteni (localStorage hiba): ' + err.message);
++      }
+     });
+   }
+ 
+diff --git a/github_mentes.js b/github_mentes.js
+index 788a1e4..0b9bc78 100644
+--- a/github_mentes.js
++++ b/github_mentes.js
+@@ -156,5 +156,119 @@ const githubMentes = (function () {
+     return { ujSorokSzama: beirando.length, valasz: await putValasz.json() };
+   }
+ 
+-  return { tokenBeallitasa, token, tokenVan, tokenTorlese, rekordMentese, ujRekordokKotegeltMentese };
++  // --- Helyi (még fel nem töltött) módosítások pufferelése -- 3. lépés, offline-first átalakítás ---
++  //
++  // A Mentés gomb (adatlap_motor.js) mostantól NEM ír azonnal GitHub-ra, csak ide, a
++  // böngésző localStorage-ába. A GitHub-oldali állapot marad a "biztonságos" állapot; ez a
++  // pending-lista csak napi/munkameneti puffer, amit a 4. lépésben egy kötegelt "Változások
++  // feltöltése" gomb ürít ki.
++
++  const PENDING_KULCS = 'pending_valtozasok';
++
++  function pendingOlvasas() {
++    try {
++      const nyers = localStorage.getItem(PENDING_KULCS);
++      return nyers ? JSON.parse(nyers) : {};
++    } catch (err) {
++      console.warn('Nem sikerült beolvasni a mentetlen módosításokat:', err);
++      return {};
++    }
++  }
++
++  function pendingIrasa(pending) {
++    try {
++      localStorage.setItem(PENDING_KULCS, JSON.stringify(pending));
++    } catch (err) {
++      console.warn('Nem sikerült elmenteni a mentetlen módosítást (localStorage hiba):', err);
++      throw err; // a hívónak látnia kell -- ha ez elszáll, a "mentés" ténylegesen nem történt meg
++    }
++  }
++
++  // Egy rekord helyi (még nem feltöltött) mentése -- ez a Mentés gomb új, elsődleges útja.
++  // Ha az adott osmId-hoz már volt korábbi (még fel nem töltött) mentés, felülírja azt --
++  // ez szándékos: a "kor" (mentesIdo) mindig az utolsó szerkesztéstől számít.
++  function pendingMentese(osmId, rekord, vonalKod) {
++    const pending = pendingOlvasas();
++    pending[String(osmId)] = { rekord, vonalKod, mentesIdo: new Date().toISOString() };
++    pendingIrasa(pending);
++    return pending;
++  }
++
++  // A 4. lépéshez (kötegelt feltöltés) kell majd -- sikeres GitHub-írás után törli a
++  // feltöltött tételt a pending-listából.
++  function pendingTorles(osmId) {
++    const pending = pendingOlvasas();
++    delete pending[String(osmId)];
++    pendingIrasa(pending);
++    return pending;
++  }
++
++  function pendingDarab() {
++    return Object.keys(pendingOlvasas()).length;
++  }
++
++  // --- Kötegelt feltöltés -- 4. lépés, offline-first átalakítás ---
++  //
++  // A pending-listából egy adott vonalhoz tartozó összes rekord egyetlen kötegelt feltöltése.
++  // Mindig a LEGFRISSEBB GitHub-tartalmat kéri le (nem a localStorage-cache-elt verziót),
++  // hogy ne írjon felül közben történt (pl. Overpass-regisztrációból vagy másik eszközről
++  // származó) változást. SHA-ütközés (409) esetén automatikusan újrapróbálkozik (max.
++  // maxProbalkozas alkalommal), minden alkalommal friss tartalomra alkalmazva a
++  // pending-rekordokat. Sikeres feltöltés után a HÍVÓ felelőssége törölni a feltöltött
++  // tételeket a pending-listából (pendingTorles) -- ez a függvény önmagában nem nyúl a
++  // pending-listához, csak a GitHub-fájlt írja.
++  //
++  // pendingRekordokEhhezAVonalhoz: [{ osmId, rekord }, ...]
++  async function pendingFeltoltesVonalra(vonalKod, pendingRekordokEhhezAVonalhoz, maxProbalkozas = 3) {
++    const path = `/repos/${REPO}/contents/${fajlUtvonal(vonalKod)}`;
++    for (let probalkozas = 1; probalkozas <= maxProbalkozas; probalkozas++) {
++      const getValasz = await githubFetch(`${path}?ref=${BRANCH}`, { method: 'GET' });
++      let sorok = [];
++      let sha = null;
++      if (getValasz.status === 200) {
++        const adat = await getValasz.json();
++        sha = adat.sha;
++        sorok = b64Decode(adat.content.replace(/\n/g, '')).split('\n').filter(s => s.trim() !== '');
++      } else if (getValasz.status !== 404) {
++        const hibaSzoveg = await getValasz.text().catch(() => '');
++        throw new Error(`Nem sikerült lekérni a jelenlegi fájlt (${getValasz.status}): ${hibaSzoveg}`);
++      }
++      // 404 esetén a fájl még nem létezik -- üres sorlistával indulunk, majd létrejön.
++
++      // Pending rekordok ráillesztése: _osm_id szerint felülír vagy hozzáfűz. A fájl többi
++      // sorát (amit nem érintett a pending) változatlanul hagyja.
++      const osmIdKulcsSzerint = new Map(); // _osm_id -> sorindex
++      sorok.forEach((sor, i) => {
++        try { const o = JSON.parse(sor); if (o._osm_id) osmIdKulcsSzerint.set(String(o._osm_id), i); }
++        catch (e) { /* hibás sor, kihagyva az indexelésből, de a sor megmarad érintetlenül */ }
++      });
++      pendingRekordokEhhezAVonalhoz.forEach(({ osmId, rekord }) => {
++        const idx = osmIdKulcsSzerint.get(String(osmId));
++        if (idx != null) sorok[idx] = JSON.stringify(rekord);
++        else sorok.push(JSON.stringify(rekord));
++      });
++
++      const body = {
++        message: `${pendingRekordokEhhezAVonalhoz.length} oszlop módosítása feltöltve (${vonalKod})`,
++        content: b64Encode(sorok.join('\n') + '\n'),
++        branch: BRANCH
++      };
++      if (sha) body.sha = sha;
++
++      const putValasz = await githubFetch(path, {
++        method: 'PUT',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify(body)
++      });
++      if (putValasz.ok) return await putValasz.json();
++      if (putValasz.status === 409 && probalkozas < maxProbalkozas) continue; // SHA-ütközés -- újrapróbál
++      const hibaSzoveg = await putValasz.text().catch(() => '');
++      throw new Error(`Feltöltés sikertelen (${putValasz.status}) ${maxProbalkozas} próbálkozás után: ${hibaSzoveg}`);
++    }
++  }
++
++  return {
++    tokenBeallitasa, token, tokenVan, tokenTorlese, rekordMentese, ujRekordokKotegeltMentese,
++    pendingOlvasas, pendingMentese, pendingTorles, pendingDarab, pendingFeltoltesVonalra
++  };
+ })();
+diff --git a/index.html b/index.html
+index 8d3f042..bff069b 100644
+--- a/index.html
++++ b/index.html
+@@ -71,6 +71,10 @@
+   <summary style="cursor:pointer; font-weight:bold;">Megjelenített vonalak</summary>
+   <div id="vonalLista" style="margin-top:6px;"></div>
+ </details>
++<div id="pendingSzamlalo" style="position:absolute; top:194px; left:320px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:13px; font-weight:bold; max-width:260px;"></div>
++<button id="feltoltesBtn" style="display:none; position:absolute; top:238px; left:320px; z-index:1000; padding:6px 12px; border-radius:4px; border:1px solid #ccc; background:#eef4ff; font-size:14px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.4);">
++  Változások feltöltése
++</button>
+ 
+ 
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+@@ -82,7 +86,7 @@
+   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
+   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
+   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
+-  const BUILD_VERZIO = '2026-08-20 -- Overpass-regisztráció (insert-only, bejelentkezett usernek), vonal-adatállapot jelzés';
++  const BUILD_VERZIO = '2026-08-22 -- 4. lépés: kötegelt "Változások feltöltése" gomb (vonalankénti commit, 409-nél automatikus újrapróbálkozás)';
+   document.addEventListener('DOMContentLoaded', () => {
+     const el = document.getElementById('buildVerzio');
+     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
+@@ -785,23 +789,76 @@
+ 
+   // A sajatAdatokTerkep tartalmából épít geojson feature-öket (csak azokból a rekordokból,
+   // amikhez van mentett koordináta) — ez az elsődleges, Overpass nélkül is használható forrás.
++  //
++  // A helyi (még fel nem töltött) pending-módosítások mindig felülírják a GitHub-ból
++  // cache-elt verziót MEGJELENÍTÉSKOR, anélkül hogy a sajatAdatokTerkep-et (a "tiszta"
++  // GitHub-cache-t) piszkálnánk -- így egy háttér-frissítés nem tudja véletlenül felülcsapni
++  // vagy eltüntetni egy helyi pending módosítást (3. lépés, offline-first átalakítás).
+   function sajatAdatokFeatureKent() {
++    const pending = (typeof githubMentes !== 'undefined') ? githubMentes.pendingOlvasas() : {};
+     const feats = [];
+     sajatAdatokTerkep.forEach((rekord, osmId) => {
+-      if (rekord.lat == null || rekord.lon == null) return;
++      const eff = pending[osmId] ? pending[osmId].rekord : rekord;
++      if (eff.lat == null || eff.lon == null) return;
++      feats.push({
++        type: 'Feature',
++        properties: { ...(eff.osm_tagek || {}), _vonal: eff._vonal, _osm_id: Number(osmId), _sajat: eff },
++        geometry: { type: 'Point', coordinates: [eff.lon, eff.lat] }
++      });
++    });
++    // Olyan pending rekordok is bekerülnek, amiknek _osm_id-ja MÉG NINCS a sajatAdatokTerkep-ben
++    // (pl. ha valaha lehetővé válik teljesen új oszlop kézi felvétele Overpass-regisztráció
++    // nélkül -- jelenleg ez nem jellemző eset, de a kód legyen rá felkészülve).
++    Object.entries(pending).forEach(([osmId, p]) => {
++      if (sajatAdatokTerkep.has(osmId)) return; // már kezelve fentebb
++      const r = p.rekord;
++      if (r.lat == null || r.lon == null) return;
+       feats.push({
+         type: 'Feature',
+-        properties: { ...(rekord.osm_tagek || {}), _vonal: rekord._vonal, _osm_id: Number(osmId), _sajat: rekord },
+-        geometry: { type: 'Point', coordinates: [rekord.lon, rekord.lat] }
++        properties: { ...(r.osm_tagek || {}), _vonal: r._vonal, _osm_id: Number(osmId), _sajat: r },
++        geometry: { type: 'Point', coordinates: [r.lon, r.lat] }
+       });
+     });
+     return feats;
+   }
+ 
++  // A "Megjelenített vonalak" panel közelében lévő pending-számláló frissítése -- akkor kell
++  // hívni, amikor a pending-lista változhatott (minden újrarajzoláskor, alkalmazSzurokEsRajzol
++  // elején, illetve cross-tab storage-eseményre).
++  function pendingSzamlaloFrissites() {
++    const el = document.getElementById('pendingSzamlalo');
++    const feltoltesBtnEl = document.getElementById('feltoltesBtn');
++    if (!el || typeof githubMentes === 'undefined') return;
++    const darab = githubMentes.pendingDarab();
++    if (feltoltesBtnEl) feltoltesBtnEl.style.display = darab > 0 ? '' : 'none';
++    if (darab === 0) {
++      el.textContent = '';
++      return;
++    }
++    const pending = githubMentes.pendingOlvasas();
++    const most = Date.now();
++    const TIZENKET_ORA_MS = 12 * 60 * 60 * 1000;
++    const vanRegi = Object.values(pending).some(p => {
++      const mentve = Date.parse(p.mentesIdo);
++      return !isNaN(mentve) && (most - mentve) > TIZENKET_ORA_MS;
++    });
++    if (vanRegi) {
++      el.textContent = `⚠ ${darab} mentetlen módosítás -- van köztük 12 óránál régebbi is!`;
++      el.style.color = '#b30000';
++    } else {
++      el.textContent = `⚠ ${darab} mentetlen módosítás (még nincs feltöltve GitHub-ra)`;
++      el.style.color = '#b36b00';
++    }
++  }
++
+   // Két feature-lista összefésülése _osm_id szerint: az ujLista (pl. friss Overpass-adat)
+   // felülírja a regiLista azonos id-jű elemeit (friss OSM-tagekkel), de a mentett _sajat
+-  // kiegészítő adatot áthozza a régi elemről, hogy ne vesszen el. Az id nélküli elemek
+-  // (nem várt eset, de biztonsági háló) egyszerűen egymás mellé kerülnek.
++  // kiegészítő adatot áthozza a régi elemről, hogy ne vesszen el -- CSAK akkor, ha az
++  // ujLista elemének NINCS saját _sajat mezője (ez a "sima Overpass" eset). Ha az ujLista
++  // már hoz saját _sajat-ot (pl. sajatAdatokFeatureKent() hívásból, háttér-frissítés vagy
++  // pending-módosítás után), az az érvényes és NEM írható felül a régivel -- különben a
++  // frissítés/mentés láthatatlan maradna a térképen. Az id nélküli elemek (nem várt eset,
++  // de biztonsági háló) egyszerűen egymás mellé kerülnek.
+   function featureekOsszefesulese(regiLista, ujLista) {
+     console.log('[DIAG] featureekOsszefesulese: régi=', regiLista.length, 'új=', ujLista.length);
+     const idNelkuliek = regiLista.filter(f => !f.properties._osm_id);
+@@ -809,7 +866,7 @@
+     regiLista.forEach(f => { if (f.properties._osm_id) map.set(String(f.properties._osm_id), f); });
+     ujLista.forEach(f => {
+       const kulcs = f.properties._osm_id ? String(f.properties._osm_id) : null;
+-      if (kulcs && map.has(kulcs)) {
++      if (kulcs && map.has(kulcs) && !f.properties._sajat) {
+         const regiSajat = map.get(kulcs).properties._sajat;
+         if (regiSajat) f.properties._sajat = regiSajat;
+       }
+@@ -833,6 +890,7 @@
+   // elő az osszesFeature-ből — ezt hívja a checkbox-pipálás is.
+   function alkalmazSzurokEsRajzol() {
+     console.log('[DIAG] alkalmazSzurokEsRajzol meghívva, osszesFeature.length=', osszesFeature.length);
++    pendingSzamlaloFrissites();
+     const aktivNevek = new Set(VONALAK.filter(v => v.aktiv).map(v => v.nev));
+     // Ha egy elemen nincs _vonal jelölés (pl. régebbi, a vonalankénti lekérés előtti mentésből
+     // származik), biztonságból megjelenítjük — jobb, mint véletlenül eltüntetni valamit.
+@@ -1059,6 +1117,87 @@
+     }
+   }
+ 
++  // --- Kötegelt feltöltés -- 4. lépés, offline-first átalakítás ---
++  //
++  // A "Változások feltöltése" gomb: a pending_valtozasok (localStorage) tartalmát vonalKod
++  // szerint csoportosítva, vonalanként külön kötegelt GitHub-commitban tölti fel (egy commit
++  // csak egy fájlt érinthet, ezért ahány vonalon van mentetlen módosítás, annyi külön
++  // PUT-hívás történik). Részleges hiba esetén a sikertelen vonal(ak) tételei a
++  // pending-listában maradnak, a sikeresek törlődnek -- semmi nem veszhet el.
++  async function feltoltesIndul() {
++    const feltoltesBtnEl = document.getElementById('feltoltesBtn');
++    if (typeof githubMentes === 'undefined' || !githubMentes.tokenVan()) {
++      alert('A feltöltéshez be kell állítani a GitHub tokent -- nyiss meg egy oszlopot Szerkesztésre, ott az adatlapon található a token-beállítás.');
++      return;
++    }
++    const pending = githubMentes.pendingOlvasas();
++    const osmIdk = Object.keys(pending);
++    if (osmIdk.length === 0) return;
++
++    // Csoportosítás vonalKod szerint.
++    const vonalankent = new Map(); // vonalKod -> [{ osmId, rekord }, ...]
++    osmIdk.forEach(osmId => {
++      const p = pending[osmId];
++      if (!vonalankent.has(p.vonalKod)) vonalankent.set(p.vonalKod, []);
++      vonalankent.get(p.vonalKod).push({ osmId, rekord: p.rekord });
++    });
++
++    const eredetiSzoveg = feltoltesBtnEl.textContent;
++    feltoltesBtnEl.disabled = true;
++    statusEl.style.color = '';
++
++    const sikeresVonalak = [];
++    const sikertelenVonalak = []; // { vonalKod, hiba }
++
++    for (const [vonalKod, tetelek] of vonalankent) {
++      feltoltesBtnEl.textContent = `Feltöltés (${vonalKod})...`;
++      statusEl.textContent = `Változások feltöltése: ${vonalKod} (${tetelek.length} oszlop)...`;
++      try {
++        await githubMentes.pendingFeltoltesVonalra(vonalKod, tetelek);
++
++        // Sikeres feltöltés után törli a pending-listából az adott vonal tételeit, és
++        // frissíti a helyi (memória + cache) állapotot, hogy a térkép azonnal a feltöltött
++        // tartalmat mutassa, ne a régi GitHub-cache-t.
++        tetelek.forEach(({ osmId, rekord }) => {
++          githubMentes.pendingTorles(osmId);
++          sajatAdatokTerkep.set(String(osmId), rekord);
++        });
++        const vonal = VONALAK.find(v => vonalKodja(v) === vonalKod);
++        if (vonal) {
++          const vonalOsszesRekordja = [];
++          sajatAdatokTerkep.forEach(r => { if (r._vonal === vonal.nev) vonalOsszesRekordja.push(JSON.stringify(r)); });
++          ndjsonCacheIrasa(vonalKod, vonalOsszesRekordja.join('\n') + '\n');
++        }
++
++        sikeresVonalak.push(vonalKod);
++      } catch (err) {
++        console.warn('Kötegelt feltöltés sikertelen:', vonalKod, err);
++        sikertelenVonalak.push({ vonalKod, hiba: err.message });
++        // A pending-lista ezen vonalhoz tartozó tételei ÉRINTETLENÜL maradnak -- semmi nem
++        // veszhet el egy sikertelen feltöltés miatt.
++      }
++    }
++
++    osszesFeature = featureekOsszefesulese(osszesFeature, sajatAdatokFeatureKent());
++    alkalmazSzurokEsRajzol(); // ez automatikusan frissíti a pendingSzamlalot is
++
++    feltoltesBtnEl.disabled = false;
++    feltoltesBtnEl.textContent = eredetiSzoveg;
++
++    if (sikertelenVonalak.length === 0) {
++      statusEl.textContent = `Változások feltöltve: ${sikeresVonalak.join(', ')}.`;
++      statusEl.style.color = '#2a7d2a';
++    } else {
++      const hibaLista = sikertelenVonalak.map(s => `${s.vonalKod}: ${s.hiba}`).join('; ');
++      statusEl.textContent = (sikeresVonalak.length > 0 ? `Feltöltve: ${sikeresVonalak.join(', ')}. ` : '') +
++        `Sikertelen (a mentetlen módosítás megmaradt): ${hibaLista}`;
++      statusEl.style.color = 'red';
++    }
++  }
++
++  const feltoltesGombEl = document.getElementById('feltoltesBtn');
++  if (feltoltesGombEl) feltoltesGombEl.addEventListener('click', feltoltesIndul);
++
+   // Induláskor: előbb a vonalak.json betöltése, utána az adatlekérés.
+   // Ha a fájl nem érhető el (pl. hiányzik, vagy hibás JSON), a beépített
+   // alapértelmezett VONALAK-kal folytatjuk, csak jelezzük a státuszsávban.
+@@ -1115,6 +1254,25 @@
+     };
+     reader.readAsText(file);
+   });
++
++  // Ne engedje véletlenül elhagyni az oldalt, ha van még fel nem töltött (helyi) módosítás.
++  window.addEventListener('beforeunload', (ev) => {
++    if (typeof githubMentes === 'undefined') return;
++    if (githubMentes.pendingDarab() > 0) {
++      ev.preventDefault();
++      ev.returnValue = '';
++    }
++  });
++
++  // Cross-tab frissítés: mivel az adatlap külön böngészőfülön/ablakban nyílik, a
++  // localStorage-írás a storage eseményen keresztül automatikusan értesíti ezt a (térkép-)
++  // fület, ha az nyitva marad háttérben, amíg az adatlapon Mentés történik.
++  window.addEventListener('storage', (ev) => {
++    if (ev.key === 'pending_valtozasok') {
++      osszesFeature = featureekOsszefesulese(osszesFeature, sajatAdatokFeatureKent());
++      alkalmazSzurokEsRajzol(); // ez automatikusan frissíti a pendingSzamlalot is
++    }
++  });
+ </script>
+ </body>
+ </html>
