@@ -71,6 +71,7 @@
   <summary style="cursor:pointer; font-weight:bold;">Megjelenített vonalak</summary>
   <div id="vonalLista" style="margin-top:6px;"></div>
 </details>
+<div id="pendingSzamlalo" style="position:absolute; top:194px; left:320px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:13px; font-weight:bold; max-width:260px;"></div>
 
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -82,7 +83,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-08-20 -- Overpass-regisztráció (insert-only, bejelentkezett usernek), vonal-adatállapot jelzés';
+  const BUILD_VERZIO = '2026-08-22 -- 3. lépés: helyi (pending) mentés-folyamat, mentetlen-módosítás számláló, beforeunload és cross-tab frissítés';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -785,23 +786,74 @@
 
   // A sajatAdatokTerkep tartalmából épít geojson feature-öket (csak azokból a rekordokból,
   // amikhez van mentett koordináta) — ez az elsődleges, Overpass nélkül is használható forrás.
+  //
+  // A helyi (még fel nem töltött) pending-módosítások mindig felülírják a GitHub-ból
+  // cache-elt verziót MEGJELENÍTÉSKOR, anélkül hogy a sajatAdatokTerkep-et (a "tiszta"
+  // GitHub-cache-t) piszkálnánk -- így egy háttér-frissítés nem tudja véletlenül felülcsapni
+  // vagy eltüntetni egy helyi pending módosítást (3. lépés, offline-first átalakítás).
   function sajatAdatokFeatureKent() {
+    const pending = (typeof githubMentes !== 'undefined') ? githubMentes.pendingOlvasas() : {};
     const feats = [];
     sajatAdatokTerkep.forEach((rekord, osmId) => {
-      if (rekord.lat == null || rekord.lon == null) return;
+      const eff = pending[osmId] ? pending[osmId].rekord : rekord;
+      if (eff.lat == null || eff.lon == null) return;
       feats.push({
         type: 'Feature',
-        properties: { ...(rekord.osm_tagek || {}), _vonal: rekord._vonal, _osm_id: Number(osmId), _sajat: rekord },
-        geometry: { type: 'Point', coordinates: [rekord.lon, rekord.lat] }
+        properties: { ...(eff.osm_tagek || {}), _vonal: eff._vonal, _osm_id: Number(osmId), _sajat: eff },
+        geometry: { type: 'Point', coordinates: [eff.lon, eff.lat] }
+      });
+    });
+    // Olyan pending rekordok is bekerülnek, amiknek _osm_id-ja MÉG NINCS a sajatAdatokTerkep-ben
+    // (pl. ha valaha lehetővé válik teljesen új oszlop kézi felvétele Overpass-regisztráció
+    // nélkül -- jelenleg ez nem jellemző eset, de a kód legyen rá felkészülve).
+    Object.entries(pending).forEach(([osmId, p]) => {
+      if (sajatAdatokTerkep.has(osmId)) return; // már kezelve fentebb
+      const r = p.rekord;
+      if (r.lat == null || r.lon == null) return;
+      feats.push({
+        type: 'Feature',
+        properties: { ...(r.osm_tagek || {}), _vonal: r._vonal, _osm_id: Number(osmId), _sajat: r },
+        geometry: { type: 'Point', coordinates: [r.lon, r.lat] }
       });
     });
     return feats;
   }
 
+  // A "Megjelenített vonalak" panel közelében lévő pending-számláló frissítése -- akkor kell
+  // hívni, amikor a pending-lista változhatott (minden újrarajzoláskor, alkalmazSzurokEsRajzol
+  // elején, illetve cross-tab storage-eseményre).
+  function pendingSzamlaloFrissites() {
+    const el = document.getElementById('pendingSzamlalo');
+    if (!el || typeof githubMentes === 'undefined') return;
+    const darab = githubMentes.pendingDarab();
+    if (darab === 0) {
+      el.textContent = '';
+      return;
+    }
+    const pending = githubMentes.pendingOlvasas();
+    const most = Date.now();
+    const TIZENKET_ORA_MS = 12 * 60 * 60 * 1000;
+    const vanRegi = Object.values(pending).some(p => {
+      const mentve = Date.parse(p.mentesIdo);
+      return !isNaN(mentve) && (most - mentve) > TIZENKET_ORA_MS;
+    });
+    if (vanRegi) {
+      el.textContent = `⚠ ${darab} mentetlen módosítás -- van köztük 12 óránál régebbi is!`;
+      el.style.color = '#b30000';
+    } else {
+      el.textContent = `⚠ ${darab} mentetlen módosítás (még nincs feltöltve GitHub-ra)`;
+      el.style.color = '#b36b00';
+    }
+  }
+
   // Két feature-lista összefésülése _osm_id szerint: az ujLista (pl. friss Overpass-adat)
   // felülírja a regiLista azonos id-jű elemeit (friss OSM-tagekkel), de a mentett _sajat
-  // kiegészítő adatot áthozza a régi elemről, hogy ne vesszen el. Az id nélküli elemek
-  // (nem várt eset, de biztonsági háló) egyszerűen egymás mellé kerülnek.
+  // kiegészítő adatot áthozza a régi elemről, hogy ne vesszen el -- CSAK akkor, ha az
+  // ujLista elemének NINCS saját _sajat mezője (ez a "sima Overpass" eset). Ha az ujLista
+  // már hoz saját _sajat-ot (pl. sajatAdatokFeatureKent() hívásból, háttér-frissítés vagy
+  // pending-módosítás után), az az érvényes és NEM írható felül a régivel -- különben a
+  // frissítés/mentés láthatatlan maradna a térképen. Az id nélküli elemek (nem várt eset,
+  // de biztonsági háló) egyszerűen egymás mellé kerülnek.
   function featureekOsszefesulese(regiLista, ujLista) {
     console.log('[DIAG] featureekOsszefesulese: régi=', regiLista.length, 'új=', ujLista.length);
     const idNelkuliek = regiLista.filter(f => !f.properties._osm_id);
@@ -809,7 +861,7 @@
     regiLista.forEach(f => { if (f.properties._osm_id) map.set(String(f.properties._osm_id), f); });
     ujLista.forEach(f => {
       const kulcs = f.properties._osm_id ? String(f.properties._osm_id) : null;
-      if (kulcs && map.has(kulcs)) {
+      if (kulcs && map.has(kulcs) && !f.properties._sajat) {
         const regiSajat = map.get(kulcs).properties._sajat;
         if (regiSajat) f.properties._sajat = regiSajat;
       }
@@ -833,6 +885,7 @@
   // elő az osszesFeature-ből — ezt hívja a checkbox-pipálás is.
   function alkalmazSzurokEsRajzol() {
     console.log('[DIAG] alkalmazSzurokEsRajzol meghívva, osszesFeature.length=', osszesFeature.length);
+    pendingSzamlaloFrissites();
     const aktivNevek = new Set(VONALAK.filter(v => v.aktiv).map(v => v.nev));
     // Ha egy elemen nincs _vonal jelölés (pl. régebbi, a vonalankénti lekérés előtti mentésből
     // származik), biztonságból megjelenítjük — jobb, mint véletlenül eltüntetni valamit.
@@ -1114,6 +1167,25 @@
       }
     };
     reader.readAsText(file);
+  });
+
+  // Ne engedje véletlenül elhagyni az oldalt, ha van még fel nem töltött (helyi) módosítás.
+  window.addEventListener('beforeunload', (ev) => {
+    if (typeof githubMentes === 'undefined') return;
+    if (githubMentes.pendingDarab() > 0) {
+      ev.preventDefault();
+      ev.returnValue = '';
+    }
+  });
+
+  // Cross-tab frissítés: mivel az adatlap külön böngészőfülön/ablakban nyílik, a
+  // localStorage-írás a storage eseményen keresztül automatikusan értesíti ezt a (térkép-)
+  // fület, ha az nyitva marad háttérben, amíg az adatlapon Mentés történik.
+  window.addEventListener('storage', (ev) => {
+    if (ev.key === 'pending_valtozasok') {
+      osszesFeature = featureekOsszefesulese(osszesFeature, sajatAdatokFeatureKent());
+      alkalmazSzurokEsRajzol(); // ez automatikusan frissíti a pendingSzamlalot is
+    }
   });
 </script>
 </body>

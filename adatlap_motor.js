@@ -714,11 +714,13 @@
   function githubTokenAllapotFrissit() {
     const allapotEl = document.getElementById('githubTokenAllapot');
     if (!allapotEl) return;
+    // A token mostantól csak a kötegelt "Változások feltöltése" gombhoz kell (4. lépés) --
+    // a Mentés gomb itt az adatlapon mindig helyi (localStorage) pufferbe ír, token nélkül is.
     if (typeof githubMentes !== 'undefined' && githubMentes.tokenVan()) {
-      allapotEl.textContent = 'Token beállítva — a Mentés gomb közvetlenül a közös fájlba ír.';
+      allapotEl.textContent = 'Token beállítva (a kötegelt feltöltéshez kell majd) — a Mentés gomb helyben, a böngészőben menti a módosítást.';
       allapotEl.style.color = '#2d6a2d';
     } else {
-      allapotEl.textContent = 'Nincs token beállítva — a Mentés gomb egyelőre fájlt tölt le.';
+      allapotEl.textContent = 'A Mentés gomb helyben, a böngészőben menti a módosítást -- a GitHub-ra feltöltés a térkép "Változások feltöltése" gombjával történik majd.';
       allapotEl.style.color = '#888';
     }
   }
@@ -763,34 +765,28 @@
       if (bejovoVonal) rekord._vonal = bejovoVonal;
       rekord.osm_tagek = osszegyujtOsmTageket();
 
-      if (typeof githubMentes !== 'undefined' && githubMentes.tokenVan()) {
-        if (!bejovoVonalKod) {
-          alert('Nem ismert, melyik vonalhoz tartozik ez az oszlop (hiányzó vonal-adat) — a térképről, egy megjelenített vonal elemére kattintva nyisd meg újra a Szerkesztés gombbal.');
-          return;
-        }
-        mentesBtnEl.disabled = true;
-        mentesBtnEl.textContent = 'Mentés folyamatban...';
-        try {
-          await githubMentes.rekordMentese(allapot['szam'], rekord, bejovoVonalKod);
-          bezarAblakot();
-        } catch (err) {
-          alert('Nem sikerült menteni a GitHub-ra: ' + err.message + '\n\nEllenőrizd a tokent, vagy próbáld újra.');
-          mentesBtnEl.disabled = false;
-          mentesBtnEl.textContent = 'Mentés';
-        }
+      // A Mentés gomb mostantól MINDIG helyben (localStorage, pending-lista) ment -- token-
+      // független, GitHub-hívás nélkül. A GitHub csak a térkép "Változások feltöltése"
+      // gombjával, kötegelten frissül majd (4. lépés).
+      if (!bejovoOsmId) {
+        alert('Nem ismert ennek az oszlopnak az OSM-azonosítója -- a térképről, egy megjelenített vonal elemére kattintva nyisd meg újra a Szerkesztés gombbal.');
+        return;
+      }
+      if (!bejovoVonalKod) {
+        alert('Nem ismert, melyik vonalhoz tartozik ez az oszlop -- a térképről, egy megjelenített vonal elemére kattintva nyisd meg újra a Szerkesztés gombbal.');
+        return;
+      }
+      if (typeof githubMentes === 'undefined') {
+        alert('A mentéshez szükséges modul nem érhető el ezen az oldalon (github_mentes.js hiányzik).');
         return;
       }
 
-      // Nincs beállítva GitHub token — fájlba mentünk letöltésként (kézzel bemásolható a repóba).
-      const fajlnev = (allapot['szam'] || 'oszlop') + '.json';
-      const blob = new Blob([JSON.stringify(rekord, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fajlnev;
-      a.click();
-      URL.revokeObjectURL(url);
-      bezarAblakot();
+      try {
+        githubMentes.pendingMentese(bejovoOsmId, rekord, bejovoVonalKod);
+        bezarAblakot();
+      } catch (err) {
+        alert('Nem sikerült helyileg elmenteni (localStorage hiba): ' + err.message);
+      }
     });
   }
 

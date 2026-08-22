@@ -156,5 +156,59 @@ const githubMentes = (function () {
     return { ujSorokSzama: beirando.length, valasz: await putValasz.json() };
   }
 
-  return { tokenBeallitasa, token, tokenVan, tokenTorlese, rekordMentese, ujRekordokKotegeltMentese };
+  // --- Helyi (még fel nem töltött) módosítások pufferelése -- 3. lépés, offline-first átalakítás ---
+  //
+  // A Mentés gomb (adatlap_motor.js) mostantól NEM ír azonnal GitHub-ra, csak ide, a
+  // böngésző localStorage-ába. A GitHub-oldali állapot marad a "biztonságos" állapot; ez a
+  // pending-lista csak napi/munkameneti puffer, amit a 4. lépésben egy kötegelt "Változások
+  // feltöltése" gomb ürít ki.
+
+  const PENDING_KULCS = 'pending_valtozasok';
+
+  function pendingOlvasas() {
+    try {
+      const nyers = localStorage.getItem(PENDING_KULCS);
+      return nyers ? JSON.parse(nyers) : {};
+    } catch (err) {
+      console.warn('Nem sikerült beolvasni a mentetlen módosításokat:', err);
+      return {};
+    }
+  }
+
+  function pendingIrasa(pending) {
+    try {
+      localStorage.setItem(PENDING_KULCS, JSON.stringify(pending));
+    } catch (err) {
+      console.warn('Nem sikerült elmenteni a mentetlen módosítást (localStorage hiba):', err);
+      throw err; // a hívónak látnia kell -- ha ez elszáll, a "mentés" ténylegesen nem történt meg
+    }
+  }
+
+  // Egy rekord helyi (még nem feltöltött) mentése -- ez a Mentés gomb új, elsődleges útja.
+  // Ha az adott osmId-hoz már volt korábbi (még fel nem töltött) mentés, felülírja azt --
+  // ez szándékos: a "kor" (mentesIdo) mindig az utolsó szerkesztéstől számít.
+  function pendingMentese(osmId, rekord, vonalKod) {
+    const pending = pendingOlvasas();
+    pending[String(osmId)] = { rekord, vonalKod, mentesIdo: new Date().toISOString() };
+    pendingIrasa(pending);
+    return pending;
+  }
+
+  // A 4. lépéshez (kötegelt feltöltés) kell majd -- sikeres GitHub-írás után törli a
+  // feltöltött tételt a pending-listából.
+  function pendingTorles(osmId) {
+    const pending = pendingOlvasas();
+    delete pending[String(osmId)];
+    pendingIrasa(pending);
+    return pending;
+  }
+
+  function pendingDarab() {
+    return Object.keys(pendingOlvasas()).length;
+  }
+
+  return {
+    tokenBeallitasa, token, tokenVan, tokenTorlese, rekordMentese, ujRekordokKotegeltMentese,
+    pendingOlvasas, pendingMentese, pendingTorles, pendingDarab
+  };
 })();
