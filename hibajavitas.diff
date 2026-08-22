@@ -1,0 +1,368 @@
+diff --git a/adatlap.html b/adatlap.html
+index c4d480d..90eca5d 100644
+--- a/adatlap.html
++++ b/adatlap.html
+@@ -66,8 +66,8 @@
+ <body>
+ <div id="forma">
+   <h1>Oszlop adatlap — <span id="cimSpan"></span></h1>
+-  <div id="mezokKontener"></div>
+-  <details id="githubTokenPanel" style="margin-top:16px; font-size:13px; color:#555;">
++  <div id="buildVerzio" style="font-size:11px; color:#aaa; margin-bottom:8px;"></div>
++  <div id="mezokKontener"></div>  <details id="githubTokenPanel" style="margin-top:16px; font-size:13px; color:#555;">
+     <summary style="cursor:pointer;">GitHub mentés beállítása</summary>
+     <div style="margin-top:6px;">
+       <div id="githubTokenAllapot" style="margin-bottom:6px;"></div>
+diff --git a/adatlap_motor.js b/adatlap_motor.js
+index 316b733..12734d5 100644
+--- a/adatlap_motor.js
++++ b/adatlap_motor.js
+@@ -2,6 +2,12 @@
+ // feszítési terv konverter. Csak ezt a fájlt kell módosítani új logikai
+ // finomításnál — az adatlap_teszt.html-hez nem kell hozzányúlni.
+ 
++  const BUILD_VERZIO = '2026-08-22 -- formazottRekord() csak aktív (nem "szellem") mezőket ment, build-verzió jelzés az adatlapon';
++  document.addEventListener('DOMContentLoaded', () => {
++    const el = document.getElementById('buildVerzio');
++    if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
++  });
++
+   // Beágyazott séma — ha a vonalak.json-hoz hasonlóan külön fájlból is be lehet tölteni,
+   // itt is megpróbáljuk előbb a fájlt, csak utána esünk vissza a beágyazottra.
+   const BEAGYAZOTT_SEMA = {"tipus_kod": "oszlop", "tipus_nev": "Felsővezeték-oszlop", "mezok": [{"kod": "szam", "nev": "Oszlopszám", "tipus": "szoveg", "terkepen": true, "kotelezo": true, "megjegyzes": "5 számjegy, opcionálisan /1 vagy /2, vagy max. 2 kis/nagybetű toldalék", "osm": {"ref": "{ertek}"}}, {"kod": "sulyos", "nev": "Súly", "tipus": "checkbox", "terkepen": true, "rovidites": "S", "kizarja": ["fixpont"], "osm": {"tensioning": "weights"}, "gyerek_mezok": [{"kod": "suly_tipus", "nev": "Súly típusa", "tipus": "radio", "terkepen": false, "alapertelmezett_opcio": "suly", "opciok": [{"kod": "suly", "nev": "Súly (alapértelmezett)", "osm": {"tensioning": "weights"}}, {"kod": "rugos", "nev": "Rugós", "osm": {"tensioning": "coil"}}]}, {"kod": "sulykosar_tipus", "nev": "Súlykosár / vezetőrúd", "tipus": "radio", "terkepen": false, "alapertelmezett_opcio": "sulykosar", "megjegyzes": "Nincs hozzá hivatalos OSM-tag, saját mező marad.", "opciok": [{"kod": "sulykosar", "nev": "Súlykosár (alapértelmezett)"}, {"kod": "vezetorud", "nev": "Vezetőrúd"}]}]}, {"kod": "szikrakoz", "nev": "Szikraköz", "tipus": "checkbox", "terkepen": true, "rovidites": "Szk", "megjegyzes": "Nincs hozzá hivatalos OSM-tag, saját mező marad.", "osm": null}, {"kod": "fixpont", "nev": "Fixpont", "tipus": "checkbox", "terkepen": true, "rovidites": "Fx", "kizarja": ["sulyos"], "megjegyzes": "Nincs hozzá hivatalos OSM-tag, saját mező marad.", "osm": null}, {"kod": "foldeles", "nev": "Földelés", "tipus": "radio", "terkepen": true, "megjegyzes": "Nincs hozzá hivatalos OSM-tag, saját mező marad. A térképi címkén H (hosszú) vagy R (rövid) betűvel jelenik meg.", "opciok": [{"kod": "hosszu", "nev": "Hosszú"}, {"kod": "rovid", "nev": "Rövid"}]}, {"kod": "foldelesi_pont", "nev": "Földelési pont", "tipus": "checkbox", "terkepen": true, "rovidites": "Fp", "megjegyzes": "Nincs hozzá hivatalos OSM-tag, saját mező marad.", "osm": null}, {"kod": "szakaszolo", "nev": "Szakaszoló", "tipus": "checkbox", "terkepen": true, "terkepi_forras": "szakaszolo_nev", "osm": {"switch": "disconnector", "location": "outdoor"}, "gyerek_mezok": [{"kod": "szakaszolo_nev", "nev": "Szakaszoló azonosítója", "tipus": "szoveg", "terkepen": true, "osm": {"ref:switch": "{ertek}"}}, {"kod": "szakaszolo_mukodtetes", "nev": "Működtetés", "tipus": "radio", "terkepen": false, "opciok": [{"kod": "kezi", "nev": "Kézi", "osm": {"actuator": "manual"}}, {"kod": "motoros", "nev": "Motoros", "osm": {"actuator": "electric_motor"}}]}, {"kod": "szakaszolo_foldelokeses", "nev": "Földelőkéses", "tipus": "checkbox", "terkepen": false, "osm": {"switch": "earthing"}}]}, {"kod": "trafo", "nev": "Transzformátor", "tipus": "checkbox", "terkepen": true, "terkepi_forras": "trafo_nev", "megjegyzes": "A trafó mindig önálló oszlopon van, más jelzőkkel jellemzően nem kombinálódik.", "gyerek_mezok": [{"kod": "trafo_nev", "nev": "Transzformátor azonosítója", "tipus": "szoveg", "terkepen": true, "osm": null}]}, {"kod": "tocsavaros", "nev": "Tőcsavaros kivitel (C jelölés)", "tipus": "checkbox", "terkepen": false, "megjegyzes": "A típuskódhoz C toldalékot ad (pl. KC)."}, {"kod": "fa_oszlop", "nev": "Fa oszlop (F jelölés a szám végén)", "tipus": "checkbox", "terkepen": false, "megjegyzes": "Ha igaz, az oszlopszám végére F kerül (pl. 05617F). Ez nem azonos a Feszítő (F) típuskóddal.", "osm": {"structure": "trunk"}}, {"kod": "oszlop_tipus", "nev": "Oszlop típusa", "tipus": "radio", "terkepen": true, "terkepen_meret_nelkul": true, "opciok": [{"kod": "T", "nev": "Tartó (T)", "osm": {"structure": "frame"}}, {"kod": "L", "nev": "Lengő (L)", "osm": {"structure": "frame"}, "megjegyzes": "Csak portál szerkezetben fordul elő."}, {"kod": "Ta", "nev": "Lehorgonyzó (Ta)", "osm": {"structure": "frame"}}, {"kod": "F", "nev": "Feszítő (F)", "osm": {"structure": "lattice"}}, {"kod": "K", "nev": "Keresztmező (K)", "osm": {"structure": "lattice"}}, {"kod": "KR", "nev": "Keretállás (KR)", "osm": {"structure": "lattice"}}, {"kod": "MKR", "nev": "Mini KR (MKR)", "osm": {"structure": "lattice"}}, {"kod": "P", "nev": "Pörgetett betonacél (P)", "osm": {"structure": "spun", "material": "concrete"}}, {"kod": "BM", "nev": "Betonacél (BM)", "osm": {"structure": "spun", "material": "concrete"}}, {"kod": "CSŐ", "nev": "Acél csőoszlop (CSŐ)", "osm": {"structure": "pole", "material": "steel"}}], "gyerek_mezok": [{"kod": "szerkezeti_elem_meret", "nev": "Szerkezeti elem mérete", "tipus": "szoveg", "terkepen": false, "megjegyzes": "Pl. 14, vagy 120/10", "csak_adatlapon": true}]}, {"kod": "mit_tart", "nev": "Csoportos tartószerkezet", "tipus": "radio", "terkepen": false, "alapertelmezett_opcio": "nincs", "megjegyzes": "Kézzel megadott mező, mert a valóság néha eltér a típusból várható kiviteltől. A \"nincs\" az alapértelmezett, és nem jelenik meg választható gombként — csak akkor kell beállítani, ha tényleg csoportos szerkezet része.", "opciok": [{"kod": "nincs", "nev": "Nincs", "rejtett": true}, {"kod": "keresztmezo", "nev": "Keresztmező", "osm": {"catenary_mast:supporting": "head_span"}}, {"kod": "portal", "nev": "Keretállás", "osm": {"catenary_mast:supporting": "portal"}}]}, {"kod": "oszloplehorgonyzas", "nev": "Oszloplehorgonyzás", "tipus": "checkbox", "terkepen": false, "osm": {"guyed": "yes"}, "gyerek_mezok": [{"kod": "la_alaptipus", "nev": "Lehorgonyzás alaptestének típusa (\"la.\")", "tipus": "radio", "terkepen": false, "opciok": [{"kod": "A", "nev": "A"}, {"kod": "B", "nev": "B"}, {"kod": "U", "nev": "U"}, {"kod": "C", "nev": "C"}, {"kod": "V", "nev": "V"}, {"kod": "Z", "nev": "Z"}, {"kod": "Y", "nev": "Y"}, {"kod": "D", "nev": "D"}, {"kod": "E", "nev": "E"}, {"kod": "F", "nev": "F"}, {"kod": "G", "nev": "G"}, {"kod": "LE", "nev": "LE"}]}, {"kod": "la_meret", "nev": "Lehorgonyzás alaptestének mérete", "tipus": "szoveg", "terkepen": false, "tizedesek": 1, "megjegyzes": "Pl. 1,0 — vagy LE esetén szélesség x magasság, pl. 1,9x2,2"}, {"kod": "la_betonmennyiseg", "nev": "Lehorgonyzás betonmennyisége", "tipus": "szam", "terkepen": false, "tizedesek": 2, "mertekegyseg": "m³"}]}, {"kod": "vezetek_kihorgonyzas", "nev": "Vezeték-kihorgonyzás", "tipus": "checkbox", "terkepen": false, "osm": {"catenary_mast:attachment": "anchor", "tensioning": "fixed"}}, {"kod": "tartoszerkezetek", "nev": "Szerkezeti szigetelők", "tipus": "tartoszerkezet_lista", "terkepen": false, "max_darab": 3, "megjegyzes": "Egy oszlopon 1-3 egyedi tartószerkezet lehet; mindegyik feszítőhuzalos vagy támasztókaros, és 2-2 fix szigetelőhellyel jár: a főkaron mindig csőcsatlakozású, a másik feszítőhuzalos esetén választószigetelő a feszítőhuzalon, támasztókaros esetén csőcsatlakozású a támasztókaron. A csatlakozás módjához nincs hivatalos OSM-tag, ez saját mező marad.", "tomeges_anyag_valaszto": true, "anyag_opciok": [{"kod": "porcelan", "nev": "Porcelán", "osm": {"insulation:material": "porcelain"}}, {"kod": "silicon", "nev": "Szilikon", "osm": {"insulation:material": "silicon"}}, {"kod": "isofix", "nev": "Isofix", "osm": {"insulation:material": "grp"}}]}, {"kod": "hasznos_hossz", "nev": "Hasznos hossz", "tipus": "szam", "terkepen": false, "tizedesek": 1, "mertekegyseg": "m", "megjegyzes": "Pl. 8,4"}, {"kod": "teljes_hossz", "nev": "Teljes hossz", "tipus": "szam", "terkepen": false, "tizedesek": 1, "mertekegyseg": "m", "megjegyzes": "Pl. 11,5"}, {"kod": "alaptipus", "nev": "Alaptípus", "tipus": "radio", "terkepen": false, "opciok": [{"kod": "A", "nev": "A"}, {"kod": "B", "nev": "B"}, {"kod": "U", "nev": "U"}, {"kod": "C", "nev": "C"}, {"kod": "V", "nev": "V"}, {"kod": "Z", "nev": "Z"}, {"kod": "Y", "nev": "Y"}, {"kod": "D", "nev": "D"}, {"kod": "E", "nev": "E"}, {"kod": "F", "nev": "F"}, {"kod": "G", "nev": "G"}, {"kod": "LE", "nev": "LE"}]}, {"kod": "alap_meret", "nev": "Alap mérete", "tipus": "szoveg", "terkepen": false, "tizedesek": 1, "megjegyzes": "Pl. 1,0 — vagy LE esetén szélesség x magasság, pl. 1,9x2,2"}, {"kod": "betonmennyiseg", "nev": "Teljes betonmennyiség", "tipus": "szam", "terkepen": false, "tizedesek": 2, "mertekegyseg": "m³"}, {"kod": "kihuzas_merteke", "nev": "Kihúzás mértéke", "tipus": "szam", "terkepen": false, "tizedesek": 1, "mertekegyseg": "m"}, {"kod": "tavolsag_szelvenyezeshez", "nev": "Oszlop távolsága a szelvényezéshez", "tipus": "szam", "terkepen": false, "elojel_kiirasa": true, "megjegyzes": "Csak a számot írd be — a \"+\" jel a megjelenítéskor automatikusan hozzáadódik, pl. +72"}, {"kod": "oszlopel_vagany_tavolsag", "nev": "Oszlopél - vágánytengely távolság", "tipus": "szam", "terkepen": false, "tizedesek": 2, "megjegyzes": "Pl. 3,51", "gyerek_mezok": []}, {"kod": "vaganyok_kozott", "nev": "Vágányok között elhelyezve", "tipus": "checkbox", "terkepen": false, "megjegyzes": "Ha igaz, két távolság adható meg (mindkét vágányhoz), pl. 4,98-5,29", "gyerek_mezok": [{"kod": "oszlopel_vagany_tavolsag_2", "nev": "Oszlopél - vágánytengely távolság (2. vágány)", "tipus": "szam", "terkepen": false, "tizedesek": 2}]}, {"kod": "megjegyzes", "nev": "Megjegyzés", "tipus": "hosszu_szoveg", "terkepen": false}, {"kod": "fenykep", "nev": "Fénykép", "tipus": "kep", "terkepen": false, "megjegyzes": "Részletek még megbeszélendők."}]};
+@@ -529,8 +535,27 @@
+     return idResz + leiroResz || '<em style="color:#999;">(még nincs adat)</em>';
+   }
+ 
++  // Csak azokat a mezőket másolja át az allapot-ból, amelyek ténylegesen "elérhetők" --
++  // vagyis minden felső szintű mező mindig bekerül, de egy gyerek-mező csak akkor, ha a
++  // szülője aktív (checkbox be van pipálva, ill. radio/select-nél mindig, mert azoknak
++  // mindig van kiválasztott értékük). Enélkül egy valaha bepipált, majd kikapcsolt (vagy
++  // sosem valóban bepipált) checkbox gyerekeinek alapértelmezett értékei "szellemadatként"
++  // bennragadnának a mentett rekordban és a popupban is (pl. "sulyos" kikapcsolva, de
++  // "suly_tipus"/"sulykosar_tipus" mégis szerepel) -- ugyanaz a logika, mint amit az
++  // osszegyujtOsmTageket() már helyesen alkalmaz az OSM-tagekre.
++  function aktivMezoErtekek(mezok, cel) {
++    mezok.forEach(m => {
++      if (m.tipus === 'tartoszerkezet_lista') return; // a tartoszerkezetek tömböt a hívó adja hozzá külön
++      if (m.kod in allapot) cel[m.kod] = allapot[m.kod];
++      if (m.gyerek_mezok && m.gyerek_mezok.length > 0 && mezoAktiv(m)) {
++        aktivMezoErtekek(m.gyerek_mezok, cel);
++      }
++    });
++  }
++
+   function formazottRekord() {
+-    const masolat = { ...allapot };
++    const masolat = {};
++    aktivMezoErtekek(sema.mezok, masolat);
+     const tavMezo = megtalalMezo(sema.mezok, 'tavolsag_szelvenyezeshez');
+     if (tavMezo && tavMezo.elojel_kiirasa && masolat['tavolsag_szelvenyezeshez'] !== '') {
+       const szam = Number(masolat['tavolsag_szelvenyezeshez']);
+@@ -714,11 +739,13 @@
+   function githubTokenAllapotFrissit() {
+     const allapotEl = document.getElementById('githubTokenAllapot');
+     if (!allapotEl) return;
++    // A token mostantól csak a kötegelt "Változások feltöltése" gombhoz kell (4. lépés) --
++    // a Mentés gomb itt az adatlapon mindig helyi (localStorage) pufferbe ír, token nélkül is.
+     if (typeof githubMentes !== 'undefined' && githubMentes.tokenVan()) {
+-      allapotEl.textContent = 'Token beállítva — a Mentés gomb közvetlenül a közös fájlba ír.';
++      allapotEl.textContent = 'Token beállítva (a kötegelt feltöltéshez kell majd) — a Mentés gomb helyben, a böngészőben menti a módosítást.';
+       allapotEl.style.color = '#2d6a2d';
+     } else {
+-      allapotEl.textContent = 'Nincs token beállítva — a Mentés gomb egyelőre fájlt tölt le.';
++      allapotEl.textContent = 'A Mentés gomb helyben, a böngészőben menti a módosítást -- a GitHub-ra feltöltés a térkép "Változások feltöltése" gombjával történik majd.';
+       allapotEl.style.color = '#888';
+     }
+   }
+@@ -763,34 +790,28 @@
+       if (bejovoVonal) rekord._vonal = bejovoVonal;
+       rekord.osm_tagek = osszegyujtOsmTageket();
+ 
+-      if (typeof githubMentes !== 'undefined' && githubMentes.tokenVan()) {
+-        if (!bejovoVonalKod) {
+-          alert('Nem ismert, melyik vonalhoz tartozik ez az oszlop (hiányzó vonal-adat) — a térképről, egy megjelenített vonal elemére kattintva nyisd meg újra a Szerkesztés gombbal.');
+-          return;
+-        }
+-        mentesBtnEl.disabled = true;
+-        mentesBtnEl.textContent = 'Mentés folyamatban...';
+-        try {
+-          await githubMentes.rekordMentese(allapot['szam'], rekord, bejovoVonalKod);
+-          bezarAblakot();
+-        } catch (err) {
+-          alert('Nem sikerült menteni a GitHub-ra: ' + err.message + '\n\nEllenőrizd a tokent, vagy próbáld újra.');
+-          mentesBtnEl.disabled = false;
+-          mentesBtnEl.textContent = 'Mentés';
+-        }
++      // A Mentés gomb mostantól MINDIG helyben (localStorage, pending-lista) ment -- token-
++      // független, GitHub-hívás nélkül. A GitHub csak a térkép "Változások feltöltése"
++      // gombjával, kötegelten frissül majd (4. lépés).
++      if (!bejovoOsmId) {
++        alert('Nem ismert ennek az oszlopnak az OSM-azonosítója -- a térképről, egy megjelenített vonal elemére kattintva nyisd meg újra a Szerkesztés gombbal.');
++        return;
++      }
++      if (!bejovoVonalKod) {
++        alert('Nem ismert, melyik vonalhoz tartozik ez az oszlop -- a térképről, egy megjelenített vonal elemére kattintva nyisd meg újra a Szerkesztés gombbal.');
++        return;
++      }
++      if (typeof githubMentes === 'undefined') {
++        alert('A mentéshez szükséges modul nem érhető el ezen az oldalon (github_mentes.js hiányzik).');
+         return;
+       }
+ 
+-      // Nincs beállítva GitHub token — fájlba mentünk letöltésként (kézzel bemásolható a repóba).
+-      const fajlnev = (allapot['szam'] || 'oszlop') + '.json';
+-      const blob = new Blob([JSON.stringify(rekord, null, 2)], { type: 'application/json' });
+-      const url = URL.createObjectURL(blob);
+-      const a = document.createElement('a');
+-      a.href = url;
+-      a.download = fajlnev;
+-      a.click();
+-      URL.revokeObjectURL(url);
+-      bezarAblakot();
++      try {
++        githubMentes.pendingMentese(bejovoOsmId, rekord, bejovoVonalKod);
++        bezarAblakot();
++      } catch (err) {
++        alert('Nem sikerült helyileg elmenteni (localStorage hiba): ' + err.message);
++      }
+     });
+   }
+ 
+diff --git a/index.html b/index.html
+index 8d3f042..dcf2872 100644
+--- a/index.html
++++ b/index.html
+@@ -71,6 +71,10 @@
+   <summary style="cursor:pointer; font-weight:bold;">Megjelenített vonalak</summary>
+   <div id="vonalLista" style="margin-top:6px;"></div>
+ </details>
++<div id="pendingSzamlalo" style="position:absolute; top:194px; left:320px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:13px; font-weight:bold; max-width:260px;"></div>
++<button id="feltoltesBtn" style="display:none; position:absolute; top:238px; left:320px; z-index:1000; padding:6px 12px; border-radius:4px; border:1px solid #ccc; background:#eef4ff; font-size:14px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.4);">
++  Változások feltöltése
++</button>
+ 
+ 
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+@@ -82,7 +86,7 @@
+   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
+   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
+   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
+-  const BUILD_VERZIO = '2026-08-20 -- Overpass-regisztráció (insert-only, bejelentkezett usernek), vonal-adatállapot jelzés';
++  const BUILD_VERZIO = '2026-08-22 -- 4. lépés (kötegelt feltöltés) + formazottRekord() "szellemadat" hiba javítása';
+   document.addEventListener('DOMContentLoaded', () => {
+     const el = document.getElementById('buildVerzio');
+     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
+@@ -785,23 +789,76 @@
+ 
+   // A sajatAdatokTerkep tartalmából épít geojson feature-öket (csak azokból a rekordokból,
+   // amikhez van mentett koordináta) — ez az elsődleges, Overpass nélkül is használható forrás.
++  //
++  // A helyi (még fel nem töltött) pending-módosítások mindig felülírják a GitHub-ból
++  // cache-elt verziót MEGJELENÍTÉSKOR, anélkül hogy a sajatAdatokTerkep-et (a "tiszta"
++  // GitHub-cache-t) piszkálnánk -- így egy háttér-frissítés nem tudja véletlenül felülcsapni
++  // vagy eltüntetni egy helyi pending módosítást (3. lépés, offline-first átalakítás).
+   function sajatAdatokFeatureKent() {
++    const pending = (typeof githubMentes !== 'undefined') ? githubMentes.pendingOlvasas() : {};
+     const feats = [];
+     sajatAdatokTerkep.forEach((rekord, osmId) => {
+-      if (rekord.lat == null || rekord.lon == null) return;
++      const eff = pending[osmId] ? pending[osmId].rekord : rekord;
++      if (eff.lat == null || eff.lon == null) return;
++      feats.push({
++        type: 'Feature',
++        properties: { ...(eff.osm_tagek || {}), _vonal: eff._vonal, _osm_id: Number(osmId), _sajat: eff },
++        geometry: { type: 'Point', coordinates: [eff.lon, eff.lat] }
++      });
++    });
++    // Olyan pending rekordok is bekerülnek, amiknek _osm_id-ja MÉG NINCS a sajatAdatokTerkep-ben
++    // (pl. ha valaha lehetővé válik teljesen új oszlop kézi felvétele Overpass-regisztráció
++    // nélkül -- jelenleg ez nem jellemző eset, de a kód legyen rá felkészülve).
++    Object.entries(pending).forEach(([osmId, p]) => {
++      if (sajatAdatokTerkep.has(osmId)) return; // már kezelve fentebb
++      const r = p.rekord;
++      if (r.lat == null || r.lon == null) return;
+       feats.push({
+         type: 'Feature',
+-        properties: { ...(rekord.osm_tagek || {}), _vonal: rekord._vonal, _osm_id: Number(osmId), _sajat: rekord },
+-        geometry: { type: 'Point', coordinates: [rekord.lon, rekord.lat] }
++        properties: { ...(r.osm_tagek || {}), _vonal: r._vonal, _osm_id: Number(osmId), _sajat: r },
++        geometry: { type: 'Point', coordinates: [r.lon, r.lat] }
+       });
+     });
+     return feats;
+   }
+ 
++  // A "Megjelenített vonalak" panel közelében lévő pending-számláló frissítése -- akkor kell
++  // hívni, amikor a pending-lista változhatott (minden újrarajzoláskor, alkalmazSzurokEsRajzol
++  // elején, illetve cross-tab storage-eseményre).
++  function pendingSzamlaloFrissites() {
++    const el = document.getElementById('pendingSzamlalo');
++    const feltoltesBtnEl = document.getElementById('feltoltesBtn');
++    if (!el || typeof githubMentes === 'undefined') return;
++    const darab = githubMentes.pendingDarab();
++    if (feltoltesBtnEl) feltoltesBtnEl.style.display = darab > 0 ? '' : 'none';
++    if (darab === 0) {
++      el.textContent = '';
++      return;
++    }
++    const pending = githubMentes.pendingOlvasas();
++    const most = Date.now();
++    const TIZENKET_ORA_MS = 12 * 60 * 60 * 1000;
++    const vanRegi = Object.values(pending).some(p => {
++      const mentve = Date.parse(p.mentesIdo);
++      return !isNaN(mentve) && (most - mentve) > TIZENKET_ORA_MS;
++    });
++    if (vanRegi) {
++      el.textContent = `⚠ ${darab} mentetlen módosítás -- van köztük 12 óránál régebbi is!`;
++      el.style.color = '#b30000';
++    } else {
++      el.textContent = `⚠ ${darab} mentetlen módosítás (még nincs feltöltve GitHub-ra)`;
++      el.style.color = '#b36b00';
++    }
++  }
++
+   // Két feature-lista összefésülése _osm_id szerint: az ujLista (pl. friss Overpass-adat)
+   // felülírja a regiLista azonos id-jű elemeit (friss OSM-tagekkel), de a mentett _sajat
+-  // kiegészítő adatot áthozza a régi elemről, hogy ne vesszen el. Az id nélküli elemek
+-  // (nem várt eset, de biztonsági háló) egyszerűen egymás mellé kerülnek.
++  // kiegészítő adatot áthozza a régi elemről, hogy ne vesszen el -- CSAK akkor, ha az
++  // ujLista elemének NINCS saját _sajat mezője (ez a "sima Overpass" eset). Ha az ujLista
++  // már hoz saját _sajat-ot (pl. sajatAdatokFeatureKent() hívásból, háttér-frissítés vagy
++  // pending-módosítás után), az az érvényes és NEM írható felül a régivel -- különben a
++  // frissítés/mentés láthatatlan maradna a térképen. Az id nélküli elemek (nem várt eset,
++  // de biztonsági háló) egyszerűen egymás mellé kerülnek.
+   function featureekOsszefesulese(regiLista, ujLista) {
+     console.log('[DIAG] featureekOsszefesulese: régi=', regiLista.length, 'új=', ujLista.length);
+     const idNelkuliek = regiLista.filter(f => !f.properties._osm_id);
+@@ -809,7 +866,7 @@
+     regiLista.forEach(f => { if (f.properties._osm_id) map.set(String(f.properties._osm_id), f); });
+     ujLista.forEach(f => {
+       const kulcs = f.properties._osm_id ? String(f.properties._osm_id) : null;
+-      if (kulcs && map.has(kulcs)) {
++      if (kulcs && map.has(kulcs) && !f.properties._sajat) {
+         const regiSajat = map.get(kulcs).properties._sajat;
+         if (regiSajat) f.properties._sajat = regiSajat;
+       }
+@@ -833,6 +890,7 @@
+   // elő az osszesFeature-ből — ezt hívja a checkbox-pipálás is.
+   function alkalmazSzurokEsRajzol() {
+     console.log('[DIAG] alkalmazSzurokEsRajzol meghívva, osszesFeature.length=', osszesFeature.length);
++    pendingSzamlaloFrissites();
+     const aktivNevek = new Set(VONALAK.filter(v => v.aktiv).map(v => v.nev));
+     // Ha egy elemen nincs _vonal jelölés (pl. régebbi, a vonalankénti lekérés előtti mentésből
+     // származik), biztonságból megjelenítjük — jobb, mint véletlenül eltüntetni valamit.
+@@ -1059,6 +1117,87 @@
+     }
+   }
+ 
++  // --- Kötegelt feltöltés -- 4. lépés, offline-first átalakítás ---
++  //
++  // A "Változások feltöltése" gomb: a pending_valtozasok (localStorage) tartalmát vonalKod
++  // szerint csoportosítva, vonalanként külön kötegelt GitHub-commitban tölti fel (egy commit
++  // csak egy fájlt érinthet, ezért ahány vonalon van mentetlen módosítás, annyi külön
++  // PUT-hívás történik). Részleges hiba esetén a sikertelen vonal(ak) tételei a
++  // pending-listában maradnak, a sikeresek törlődnek -- semmi nem veszhet el.
++  async function feltoltesIndul() {
++    const feltoltesBtnEl = document.getElementById('feltoltesBtn');
++    if (typeof githubMentes === 'undefined' || !githubMentes.tokenVan()) {
++      alert('A feltöltéshez be kell állítani a GitHub tokent -- nyiss meg egy oszlopot Szerkesztésre, ott az adatlapon található a token-beállítás.');
++      return;
++    }
++    const pending = githubMentes.pendingOlvasas();
++    const osmIdk = Object.keys(pending);
++    if (osmIdk.length === 0) return;
++
++    // Csoportosítás vonalKod szerint.
++    const vonalankent = new Map(); // vonalKod -> [{ osmId, rekord }, ...]
++    osmIdk.forEach(osmId => {
++      const p = pending[osmId];
++      if (!vonalankent.has(p.vonalKod)) vonalankent.set(p.vonalKod, []);
++      vonalankent.get(p.vonalKod).push({ osmId, rekord: p.rekord });
++    });
++
++    const eredetiSzoveg = feltoltesBtnEl.textContent;
++    feltoltesBtnEl.disabled = true;
++    statusEl.style.color = '';
++
++    const sikeresVonalak = [];
++    const sikertelenVonalak = []; // { vonalKod, hiba }
++
++    for (const [vonalKod, tetelek] of vonalankent) {
++      feltoltesBtnEl.textContent = `Feltöltés (${vonalKod})...`;
++      statusEl.textContent = `Változások feltöltése: ${vonalKod} (${tetelek.length} oszlop)...`;
++      try {
++        await githubMentes.pendingFeltoltesVonalra(vonalKod, tetelek);
++
++        // Sikeres feltöltés után törli a pending-listából az adott vonal tételeit, és
++        // frissíti a helyi (memória + cache) állapotot, hogy a térkép azonnal a feltöltött
++        // tartalmat mutassa, ne a régi GitHub-cache-t.
++        tetelek.forEach(({ osmId, rekord }) => {
++          githubMentes.pendingTorles(osmId);
++          sajatAdatokTerkep.set(String(osmId), rekord);
++        });
++        const vonal = VONALAK.find(v => vonalKodja(v) === vonalKod);
++        if (vonal) {
++          const vonalOsszesRekordja = [];
++          sajatAdatokTerkep.forEach(r => { if (r._vonal === vonal.nev) vonalOsszesRekordja.push(JSON.stringify(r)); });
++          ndjsonCacheIrasa(vonalKod, vonalOsszesRekordja.join('\n') + '\n');
++        }
++
++        sikeresVonalak.push(vonalKod);
++      } catch (err) {
++        console.warn('Kötegelt feltöltés sikertelen:', vonalKod, err);
++        sikertelenVonalak.push({ vonalKod, hiba: err.message });
++        // A pending-lista ezen vonalhoz tartozó tételei ÉRINTETLENÜL maradnak -- semmi nem
++        // veszhet el egy sikertelen feltöltés miatt.
++      }
++    }
++
++    osszesFeature = featureekOsszefesulese(osszesFeature, sajatAdatokFeatureKent());
++    alkalmazSzurokEsRajzol(); // ez automatikusan frissíti a pendingSzamlalot is
++
++    feltoltesBtnEl.disabled = false;
++    feltoltesBtnEl.textContent = eredetiSzoveg;
++
++    if (sikertelenVonalak.length === 0) {
++      statusEl.textContent = `Változások feltöltve: ${sikeresVonalak.join(', ')}.`;
++      statusEl.style.color = '#2a7d2a';
++    } else {
++      const hibaLista = sikertelenVonalak.map(s => `${s.vonalKod}: ${s.hiba}`).join('; ');
++      statusEl.textContent = (sikeresVonalak.length > 0 ? `Feltöltve: ${sikeresVonalak.join(', ')}. ` : '') +
++        `Sikertelen (a mentetlen módosítás megmaradt): ${hibaLista}`;
++      statusEl.style.color = 'red';
++    }
++  }
++
++  const feltoltesGombEl = document.getElementById('feltoltesBtn');
++  if (feltoltesGombEl) feltoltesGombEl.addEventListener('click', feltoltesIndul);
++
+   // Induláskor: előbb a vonalak.json betöltése, utána az adatlekérés.
+   // Ha a fájl nem érhető el (pl. hiányzik, vagy hibás JSON), a beépített
+   // alapértelmezett VONALAK-kal folytatjuk, csak jelezzük a státuszsávban.
+@@ -1115,6 +1254,25 @@
+     };
+     reader.readAsText(file);
+   });
++
++  // Ne engedje véletlenül elhagyni az oldalt, ha van még fel nem töltött (helyi) módosítás.
++  window.addEventListener('beforeunload', (ev) => {
++    if (typeof githubMentes === 'undefined') return;
++    if (githubMentes.pendingDarab() > 0) {
++      ev.preventDefault();
++      ev.returnValue = '';
++    }
++  });
++
++  // Cross-tab frissítés: mivel az adatlap külön böngészőfülön/ablakban nyílik, a
++  // localStorage-írás a storage eseményen keresztül automatikusan értesíti ezt a (térkép-)
++  // fület, ha az nyitva marad háttérben, amíg az adatlapon Mentés történik.
++  window.addEventListener('storage', (ev) => {
++    if (ev.key === 'pending_valtozasok') {
++      osszesFeature = featureekOsszefesulese(osszesFeature, sajatAdatokFeatureKent());
++      alkalmazSzurokEsRajzol(); // ez automatikusan frissíti a pendingSzamlalot is
++    }
++  });
+ </script>
+ </body>
+ </html>
