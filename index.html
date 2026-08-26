@@ -2,6 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5">
 <title>MÁV elemek — 120a és 82 vonal</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css" />
@@ -54,25 +55,18 @@
 <body>
 <div id="map"></div>
 <div id="status">Válaszd ki a letöltendő vonalakat lent, majd nyomd meg az "Adatok letöltése" gombot.</div>
-<button id="saveSnapshotBtn" style="display:none; position:absolute; top:54px; left:50px; z-index:1000; padding:6px 12px; border-radius:4px; border:1px solid #ccc; background:white; font-size:14px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.4);">
-  Mentés adatok.geojson-ként
-</button>
-<div style="position:absolute; top:98px; left:50px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:14px; display:flex; flex-direction:column; gap:8px; min-width:240px;">
+<div style="position:absolute; top:54px; left:50px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:14px; display:flex; flex-direction:column; gap:8px; min-width:240px;">
   <div id="buildVerzio" style="font-size:11px; color:#888; user-select:all;"></div>
-  <div>
-    <label for="manualFileInput">Helyi fájl betöltése (ha az élő adat hibás/hiányos):</label><br>
-    <input type="file" id="manualFileInput" accept=".geojson,.json" />
-  </div>
   <button id="adatokLetoltesBtn" style="padding:6px 12px; border-radius:4px; border:1px solid #ccc; background:#eef4ff; font-size:14px; cursor:pointer;">
     Adatok letöltése
   </button>
 </div>
-<details id="vonalPanel" style="position:absolute; top:194px; left:50px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:14px; max-width:260px;">
+<details id="vonalPanel" style="position:absolute; top:100px; left:50px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:14px; max-width:260px;">
   <summary style="cursor:pointer; font-weight:bold;">Megjelenített vonalak</summary>
   <div id="vonalLista" style="margin-top:6px;"></div>
 </details>
-<div id="pendingSzamlalo" style="position:absolute; top:194px; left:320px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:13px; font-weight:bold; max-width:260px;"></div>
-<button id="feltoltesBtn" style="display:none; position:absolute; top:238px; left:320px; z-index:1000; padding:6px 12px; border-radius:4px; border:1px solid #ccc; background:#eef4ff; font-size:14px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.4);">
+<div id="pendingSzamlalo" style="position:absolute; top:100px; left:320px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:13px; font-weight:bold; max-width:260px;"></div>
+<button id="feltoltesBtn" style="display:none; position:absolute; top:144px; left:320px; z-index:1000; padding:6px 12px; border-radius:4px; border:1px solid #ccc; background:#eef4ff; font-size:14px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.4);">
   Változások feltöltése
 </button>
 
@@ -86,7 +80,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-08-22 -- 4. lépés (kötegelt feltöltés) + formazottRekord() "szellemadat" hiba javítása';
+  const BUILD_VERZIO = '2026-08-23 -- viewport javítás, elavult kézi fájl-betöltés/mentés eltávolítva, ékezetes mezőnevek a popupban (sémából)';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -176,6 +170,28 @@
   // tartozik (átfedő vonalaknál egy elem csak az őt ténylegesen tartalmazó vonalhoz tartozik).
   let osszesFeature = [];
   const letoltottVonalak = new Set();
+
+  // A saját felmérési séma (adatlap_oszlop.json) mező-kód -> magyar név párosítását
+  // használjuk a popup "Mentett kiegészítő adatok" táblázatának feliratozásához, hogy ne
+  // kelljen egy MÁSODIK, a sémától független fordítási listát karbantartani (ami könnyen
+  // szétcsúszik tőle -- lásd korábban a gépies "suly_tipus" -> "Suly tipus" feliratozást,
+  // ékezetek nélkül). Ha a séma nem tölthető be, vagy egy mező nincs benne, a régi,
+  // gépies átalakítás marad tartalék megoldásként.
+  let SAJAT_MEZO_NEVEK = {};
+  let SAJAT_OPCIO_NEVEK = {}; // mezoKod -> { opcioKod: opcioNev }
+  function gyujtsMezoNeveket(mezok) {
+    (mezok || []).forEach(m => {
+      if (m.kod && m.nev) SAJAT_MEZO_NEVEK[m.kod] = m.nev;
+      if (m.kod && m.opciok) {
+        SAJAT_OPCIO_NEVEK[m.kod] = {};
+        m.opciok.forEach(o => { if (o.kod && o.nev) SAJAT_OPCIO_NEVEK[m.kod][o.kod] = o.nev; });
+      }
+      if (m.gyerek_mezok) gyujtsMezoNeveket(m.gyerek_mezok);
+    });
+  }
+  fetch('./adatlap_oszlop.json').then(r => r.json()).then(sema => gyujtsMezoNeveket(sema.mezok))
+    .catch(err => console.warn('adatlap_oszlop.json nem tölthető be a popup-feliratokhoz:', err));
+
   // A sajat_adatok/{kod}.ndjson fájlok együttes tartalma _osm_id kulccsal — ez az elsődleges
   // forrás: offline/Overpass nélkül is ebből rajzolunk, az Overpass-eredmény pedig csak
   // frissíti/kiegészíti. Minden rekord saját _vonal mezőt visz magával (nem csak a fájl helye
@@ -451,8 +467,8 @@
       const sajatSorok = Object.entries(tags._sajat)
         .filter(([k, v]) => !KIHAGYVA.has(k) && v !== '' && v !== false && v != null)
         .map(([k, v]) => {
-          const cimke = k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
-          const ertek = v === true ? 'igen' : v;
+          const cimke = SAJAT_MEZO_NEVEK[k] || k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+          const ertek = v === true ? 'igen' : ((SAJAT_OPCIO_NEVEK[k] && SAJAT_OPCIO_NEVEK[k][v]) || v);
           return `<tr><td>${escapeHtml(cimke)}</td><td>${escapeHtml(String(ertek))}</td></tr>`;
         })
         .join('');
@@ -949,22 +965,6 @@
       ? ` (élő adat — de nem sikerült: ${sikertelenVonalak.join(', ')})`
       : ' (élő adat)';
     if (sikertelenVonalak.length > 0) statusEl.style.color = '#b36b00';
-
-    // Sikeres élő betöltés után felkínáljuk, hogy ez legyen az új helyi mentés is —
-    // a böngésző biztonsági okból nem írhat csendben a lemezre, ezért ez egy
-    // egykattintásos letöltés, amit utána a repóba kell másolni.
-    const saveBtn = document.getElementById('saveSnapshotBtn');
-    saveBtn.style.display = 'block';
-    saveBtn.onclick = () => {
-      const geojson = { type: 'FeatureCollection', features: osszesFeature };
-      const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/geo+json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'adatok.geojson';
-      a.click();
-      URL.revokeObjectURL(url);
-    };
   }
 
   // --- Megjelenített vonalak panel: pipálható lista, változtatáskor újratölti az adatot ---
@@ -1076,7 +1076,12 @@
       const ujRekordok = csomopontok
         .filter(node => !sajatAdatokTerkep.has(String(node.id)))
         .map(node => ({
-          szam: (node.tags && node.tags.ref) ? node.tags.ref : String(node.id),
+          // Ha a node-nak nincs OSM ref tagje, a szám ÜRESEN marad -- korábban itt a nyers
+          // OSM node ID került "szam"-ként beírásra, ami aztán az adatlapon "Oszlopszám"-ként
+          // jelent meg (megtévesztő, 10+ jegyű "oszlopszám"). Az adatlap a name/ref tagből
+          // (ertelmezCimkeSzoveget) amúgy is helyesen kitalálja a valódi számot Szerkesztéskor,
+          // ha van name tag -- itt regisztrációkor nem kell/nem szabad kitalálni semmit.
+          szam: (node.tags && node.tags.ref) ? node.tags.ref : '',
           _osm_id: node.id,
           lat: node.lat,
           lon: node.lon,
@@ -1231,29 +1236,6 @@
   document.getElementById('adatokLetoltesBtn').addEventListener('click', betoltesIndul);
 
   osmAuth.visszaterasFeldolgozasa().then(() => osmBejelentkezesAllapotFrissit());
-
-  // Kézi felülbírálás — bármikor használható, függetlenül attól, hogy az élő adat
-  // "sikeresnek" tűnt-e (pl. ha egy Overpass-tükör hibás/hiányos, de HTTP 200-at ad vissza).
-  document.getElementById('manualFileInput').addEventListener('change', (ev) => {
-    const file = ev.target.files[0];
-    if (!file) return;
-    statusEl.textContent = 'Kézi fájl beolvasása...';
-    statusEl.style.color = '';
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const geojson = JSON.parse(e.target.result);
-        osszesFeature = geojson.features;
-        alkalmazSzurokEsRajzol();
-        statusEl.textContent += ' (kézi fájlból)';
-        statusEl.style.color = '#b36b00';
-      } catch (err) {
-        statusEl.textContent = 'Hiba a fájl feldolgozásakor: ' + err.message;
-        statusEl.style.color = 'red';
-      }
-    };
-    reader.readAsText(file);
-  });
 
   // Ne engedje véletlenül elhagyni az oldalt, ha van még fel nem töltött (helyi) módosítás.
   window.addEventListener('beforeunload', (ev) => {

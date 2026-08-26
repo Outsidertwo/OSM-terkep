@@ -2,7 +2,7 @@
 // feszítési terv konverter. Csak ezt a fájlt kell módosítani új logikai
 // finomításnál — az adatlap_teszt.html-hez nem kell hozzányúlni.
 
-  const BUILD_VERZIO = '2026-08-22 -- formazottRekord() csak aktív (nem "szellem") mezőket ment, build-verzió jelzés az adatlapon';
+  const BUILD_VERZIO = '2026-08-23 -- viewport javítás az adatlapon is (mobil méretezés)';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
