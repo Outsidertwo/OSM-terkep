@@ -1,0 +1,56 @@
+diff --git a/index.html b/index.html
+index a5c46fe..1fa7af0 100644
+--- a/index.html
++++ b/index.html
+@@ -80,7 +80,7 @@
+   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
+   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
+   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
+-  const BUILD_VERZIO = '2026-08-23 -- viewport javítás, elavult kézi fájl-betöltés/mentés eltávolítva, ékezetes mezőnevek a popupban (sémából)';
++  const BUILD_VERZIO = '2026-08-29 -- popup megőrzése újrarajzoláson át (mobil "felvillan és eltűnik" hiba javítása)';
+   document.addEventListener('DOMContentLoaded', () => {
+     const el = document.getElementById('buildVerzio');
+     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
+@@ -560,6 +560,10 @@
+   function addMarker(type, lat, lon, tags, memberCount, feature) {
+     const marker = L.marker([lat, lon], { icon: makeIcon(type.color, type.shape), draggable: false });
+     marker.bindPopup(popupContent(tags, type, lat, lon));
++    // Azonosító, amivel újrarajzolás után visszatalálunk erre a konkrét oszlopra/elemre
++    // (lásd loadGeoJSON -- nyitott popup megőrzése). _osm_id hiányában (pl. csoportosított
++    // típusoknál, ha az valamiért mégis hiányozna) a ref/name szolgál tartalék azonosítóként.
++    marker.sajatAzonosito = tags._osm_id != null ? String(tags._osm_id) : (tags.ref || tags.name || null);
+     // DIAGNOSZTIKA: ha a popup bezárul, kiírjuk a hívási láncot (stack trace) is --
+     // ebből látszik, mi zárta be (natív X gomb, vagy pl. egy loadGeoJSON-újrarajzolás).
+     marker.on('popupclose', () => {
+@@ -586,6 +590,16 @@
+     // MELYIK kód hívta meg (pl. inditas / betoltesIndul / vonal-checkbox váltás).
+     console.log('[DIAG] loadGeoJSON fut -- feature-ök száma:', geojson.features.length);
+     console.trace('[DIAG] loadGeoJSON hívási lánc');
++
++    // A nyitott popup megőrzése újrarajzoláson át: mielőtt törölnénk a régi markereket,
++    // megjegyezzük, van-e köztük épp nyitott popupú, és melyik az az elem (sajatAzonosito).
++    // Enélkül BÁRMILYEN újrarajzolás (pl. egy háttér-frissítés, ami néhány másodperccel a
++    // kezdeti betöltés után csendben lefut) azonnal becsukná a nyitott popupot -- mobilon ez
++    // "felvillan és eltűnik" tünetként jelentkezett, mert ott a koppintás és a háttér-
++    // frissítés lefutása gyakrabban esik egybe időben, mint asztali gépen egérrel.
++    let nyitottAzonosito = null;
++    osszesMarker.forEach(m => { if (m.isPopupOpen && m.isPopupOpen()) nyitottAzonosito = m.sajatAzonosito; });
++
+     TYPES.forEach(t => clusterGroups[t.key].clearLayers());
+     osszesMarker.length = 0;
+     const counts = {};
+@@ -623,6 +637,14 @@
+     const summary = TYPES.map(t => `${t.label}: ${counts[t.key]}`).join(' · ');
+     statusEl.textContent = `Betöltve — ${summary}`;
+ 
++    // Ha volt nyitott popup az újrarajzolás előtt, és megtaláljuk ugyanazt az elemet az
++    // újonnan létrehozott markerek között, visszanyitjuk -- így a felhasználó szemszögéből
++    // a popup nem tűnik el, még akkor sem, ha épp egy háttér-frissítés futott le alatta.
++    if (nyitottAzonosito != null) {
++      const ujraNyitando = osszesMarker.find(m => m.sajatAzonosito === nyitottAzonosito);
++      if (ujraNyitando) ujraNyitando.openPopup();
++    }
++
+     const allLayers = TYPES.map(t => clusterGroups[t.key]).filter(g => g.getLayers().length > 0);
+     if (allLayers.length > 0) {
+       const group = L.featureGroup(allLayers.flatMap(g => g.getLayers()));
