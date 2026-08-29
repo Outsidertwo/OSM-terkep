@@ -54,6 +54,12 @@
 </head>
 <body>
 <div id="map"></div>
+<div id="mobilElemNezet" style="display:none; position:fixed; inset:0; z-index:3000; background:white; overflow-y:auto; -webkit-overflow-scrolling:touch;">
+  <div style="position:sticky; top:0; background:white; border-bottom:1px solid #ddd; padding:10px 14px; display:flex; justify-content:flex-end; align-items:center;">
+    <button id="mobilElemBezarBtn" style="font-size:16px; padding:6px 14px; border:1px solid #ccc; border-radius:4px; background:#f0f0f0; cursor:pointer;">✕ Bezár</button>
+  </div>
+  <div id="mobilElemTartalom" style="padding:14px; font-size:15px;"></div>
+</div>
 <div id="status">Válaszd ki a letöltendő vonalakat lent, majd nyomd meg az "Adatok letöltése" gombot.</div>
 <div style="position:absolute; top:54px; left:50px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:14px; display:flex; flex-direction:column; gap:8px; min-width:240px;">
   <div id="buildVerzio" style="font-size:11px; color:#888; user-select:all;"></div>
@@ -80,7 +86,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-08-29 -- popup megőrzése újrarajzoláson át (mobil "felvillan és eltűnik" hiba javítása)';
+  const BUILD_VERZIO = '2026-08-29 -- mobilon teljes oldalas elem-nézet a Leaflet-popup helyett (asztali gépen popup marad)';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -557,9 +563,39 @@
   ).addTo(map);
   TYPES.forEach(type => layerControl.addOverlay(clusterGroups[type.key], type.label));
 
+  // Mobilon (keskeny képernyőn) a Leaflet-popup helyett teljes oldalas nézetet mutatunk --
+  // a kis, kézzel húzható lebegő popup mobilon részben a fix UI-dobozok alá bújt, nagy
+  // (sok mentett adatot tartalmazó) tartalomnál a húzás pedig becsukta. A teljes oldalas
+  // nézet ettől függetlenül él (nem Leaflet-popup, hanem egy önálló, fix overlay div),
+  // ezért az újrarajzolások (loadGeoJSON) sem tudják véletlenül becsukni.
+  function isMobilNezet() {
+    return window.innerWidth <= 700;
+  }
+  function mobilElemMegjelenit(html) {
+    document.getElementById('mobilElemTartalom').innerHTML = html;
+    document.getElementById('mobilElemNezet').style.display = 'block';
+    document.getElementById('mobilElemNezet').scrollTop = 0;
+  }
+  function mobilElemBezar() {
+    document.getElementById('mobilElemNezet').style.display = 'none';
+  }
+  document.getElementById('mobilElemBezarBtn').addEventListener('click', mobilElemBezar);
+
   function addMarker(type, lat, lon, tags, memberCount, feature) {
     const marker = L.marker([lat, lon], { icon: makeIcon(type.color, type.shape), draggable: false });
-    marker.bindPopup(popupContent(tags, type, lat, lon));
+    const html = popupContent(tags, type, lat, lon);
+    marker.bindPopup(html);
+    // A Leaflet alapértelmezett, bindPopup által beállított "kattintásra nyílik a popup"
+    // viselkedést levesszük, és sajátra cseréljük -- mobilon a teljes oldalas nézetet
+    // nyitjuk meg helyette, asztali gépen marad a megszokott kis popup.
+    marker.off('click');
+    marker.on('click', () => {
+      if (isMobilNezet()) {
+        mobilElemMegjelenit(html);
+      } else {
+        marker.openPopup();
+      }
+    });
     // Azonosító, amivel újrarajzolás után visszatalálunk erre a konkrét oszlopra/elemre
     // (lásd loadGeoJSON -- nyitott popup megőrzése). _osm_id hiányában (pl. csoportosított
     // típusoknál, ha az valamiért mégis hiányozna) a ref/name szolgál tartalék azonosítóként.
