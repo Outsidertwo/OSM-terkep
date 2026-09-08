@@ -62,6 +62,18 @@
     font-weight: normal; cursor: pointer; white-space: nowrap;
   }
   .mini-radio-csoport input[type="radio"] { width: auto; }
+
+  /* Mobil-reszponzív nézet (A pont) -- keskeny (700px alatti) képernyőn a jobb oldali
+     panel csak-asztali-gépen-hasznos dobozai (Generált OSM-tagek, Saját rekord JSON,
+     Feszítési terv szöveg) feleslegesek és helyet foglalnak; a Térképi címke előnézet
+     marad, mert az a mentés élő visszajelzése terepen is hasznos. A két panel emellett
+     egymás alá kerül 55%/45% helyett, hogy a bal oldali forma teljes szélességet kapjon. */
+  @media (max-width: 700px) {
+    body { flex-direction: column; height: auto; min-height: 100vh; }
+    #forma, #elonezet { width: 100%; border-right: none; }
+    #forma { border-bottom: 1px solid #ccc; }
+    .csak-asztali { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -99,15 +111,15 @@
     </div>
     <div id="cimkeElonezet" class="cimke-elonezet"></div>
   </div>
-  <div class="doboz">
+  <div class="doboz csak-asztali">
     <h2>Generált OSM-tagek</h2>
     <pre id="osmElonezet"></pre>
   </div>
-  <div class="doboz">
+  <div class="doboz csak-asztali">
     <h2>Saját rekord (JSON)</h2>
     <pre id="rekordElonezet"></pre>
   </div>
-  <div class="doboz">
+  <div class="doboz csak-asztali">
     <h2>Feszítési terv szöveg</h2>
     <div style="font-size:12px; color:#888; margin-bottom:6px;">
       Ez a doboz kétirányú: a fenti mezők kitöltésekor automatikusan frissül, de bele is
@@ -122,6 +134,7 @@
 </div>
 
 <script src="./github_mentes.js"></script>
+<script src="./cimke_epito.js"></script>
 <script src="./adatlap_motor.js"></script>
 </body>
 </html>

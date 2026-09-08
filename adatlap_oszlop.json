@@ -1,7 +1,6 @@
 {
   "tipus_kod": "oszlop",
   "tipus_nev": "Felsővezeték-oszlop",
-
   "mezok": [
     {
       "kod": "szam",
@@ -10,17 +9,22 @@
       "terkepen": true,
       "kotelezo": true,
       "megjegyzes": "5 számjegy, opcionálisan /1 vagy /2, vagy max. 2 kis/nagybetű toldalék",
-      "osm": { "ref": "{ertek}" }
+      "osm": {
+        "ref": "{ertek}"
+      }
     },
-
     {
       "kod": "sulyos",
       "nev": "Súly",
       "tipus": "checkbox",
       "terkepen": true,
       "rovidites": "S",
-      "kizarja": ["fixpont"],
-      "osm": { "tensioning": "weights" },
+      "kizarja": [
+        "fixpont"
+      ],
+      "osm": {
+        "tensioning": "weights"
+      },
       "gyerek_mezok": [
         {
           "kod": "suly_tipus",
@@ -29,8 +33,20 @@
           "terkepen": false,
           "alapertelmezett_opcio": "suly",
           "opciok": [
-            { "kod": "suly", "nev": "Súly (alapértelmezett)", "osm": { "tensioning": "weights" } },
-            { "kod": "rugos", "nev": "Rugós", "osm": { "tensioning": "coil" } }
+            {
+              "kod": "suly",
+              "nev": "Súly (alapértelmezett)",
+              "osm": {
+                "tensioning": "weights"
+              }
+            },
+            {
+              "kod": "rugos",
+              "nev": "Rugós",
+              "osm": {
+                "tensioning": "coil"
+              }
+            }
           ]
         },
         {
@@ -41,8 +57,14 @@
           "alapertelmezett_opcio": "sulykosar",
           "megjegyzes": "Nincs hozzá hivatalos OSM-tag, saját mező marad.",
           "opciok": [
-            { "kod": "sulykosar", "nev": "Súlykosár (alapértelmezett)" },
-            { "kod": "vezetorud", "nev": "Vezetőrúd" }
+            {
+              "kod": "sulykosar",
+              "nev": "Súlykosár (alapértelmezett)"
+            },
+            {
+              "kod": "vezetorud",
+              "nev": "Vezetőrúd"
+            }
           ]
         }
       ]
@@ -62,7 +84,9 @@
       "tipus": "checkbox",
       "terkepen": true,
       "rovidites": "Fx",
-      "kizarja": ["sulyos"],
+      "kizarja": [
+        "sulyos"
+      ],
       "megjegyzes": "Nincs hozzá hivatalos OSM-tag, saját mező marad.",
       "osm": null
     },
@@ -82,25 +106,35 @@
       "terkepen": true,
       "megjegyzes": "Nincs hozzá hivatalos OSM-tag, saját mező marad. A térképi címkén H (hosszú) vagy R (rövid) betűvel jelenik meg.",
       "opciok": [
-        { "kod": "hosszu", "nev": "Hosszú" },
-        { "kod": "rovid", "nev": "Rövid" }
+        {
+          "kod": "hosszu",
+          "nev": "Hosszú"
+        },
+        {
+          "kod": "rovid",
+          "nev": "Rövid"
+        }
       ]
     },
-    
     {
       "kod": "szakaszolo",
       "nev": "Szakaszoló",
       "tipus": "checkbox",
       "terkepen": true,
       "terkepi_forras": "szakaszolo_nev",
-      "osm": { "switch": "disconnector", "location": "outdoor" },
+      "osm": {
+        "switch": "disconnector",
+        "location": "outdoor"
+      },
       "gyerek_mezok": [
         {
           "kod": "szakaszolo_nev",
           "nev": "Szakaszoló azonosítója",
           "tipus": "szoveg",
           "terkepen": true,
-          "osm": { "ref:switch": "{ertek}" }
+          "osm": {
+            "ref:switch": "{ertek}"
+          }
         },
         {
           "kod": "szakaszolo_mukodtetes",
@@ -108,8 +142,20 @@
           "tipus": "radio",
           "terkepen": false,
           "opciok": [
-            { "kod": "kezi", "nev": "Kézi", "osm": { "actuator": "manual" } },
-            { "kod": "motoros", "nev": "Motoros", "osm": { "actuator": "electric_motor" } }
+            {
+              "kod": "kezi",
+              "nev": "Kézi",
+              "osm": {
+                "actuator": "manual"
+              }
+            },
+            {
+              "kod": "motoros",
+              "nev": "Motoros",
+              "osm": {
+                "actuator": "electric_motor"
+              }
+            }
           ]
         },
         {
@@ -117,7 +163,9 @@
           "nev": "Földelőkéses",
           "tipus": "checkbox",
           "terkepen": false,
-          "osm": { "switch": "earthing" }
+          "osm": {
+            "switch": "earthing"
+          }
         }
       ]
     },
@@ -135,10 +183,27 @@
           "tipus": "szoveg",
           "terkepen": true,
           "osm": null
+        },
+        {
+          "kod": "manufacturer",
+          "nev": "Gyártó",
+          "tipus": "szoveg",
+          "terkepen": false,
+          "osm": {
+            "manufacturer": "{ertek}"
+          }
+        },
+        {
+          "kod": "model",
+          "nev": "Típus",
+          "tipus": "szoveg",
+          "terkepen": false,
+          "osm": {
+            "model": "{ertek}"
+          }
         }
       ]
     },
-
     {
       "kod": "tocsavaros",
       "nev": "Tőcsavaros kivitel (C jelölés)",
@@ -147,31 +212,97 @@
       "megjegyzes": "A típuskódhoz C toldalékot ad (pl. KC)."
     },
     {
-      "kod": "fa_oszlop",
-      "nev": "Fa oszlop (F jelölés a szám végén)",
-      "tipus": "checkbox",
-      "terkepen": false,
-      "megjegyzes": "Ha igaz, az oszlopszám végére F kerül (pl. 05617F). Ez nem azonos a Feszítő (F) típuskóddal.",
-      "osm": { "structure": "trunk" }
-    },
-
-    {
       "kod": "oszlop_tipus",
       "nev": "Oszlop típusa",
       "tipus": "radio",
       "terkepen": true,
       "terkepen_meret_nelkul": true,
       "opciok": [
-        { "kod": "T",   "nev": "Tartó (T)",         "osm": { "structure": "frame", "material": "steel"  } },
-        { "kod": "L",   "nev": "Lengő (L)",          "osm": { "structure": "frame", "material": "steel"  }, "megjegyzes": "Csak portál szerkezetben fordul elő." },
-        { "kod": "Ta",  "nev": "Lehorgonyzó (Ta)",   "osm": { "structure": "frame" } },
-        { "kod": "F",   "nev": "Feszítő (F)",        "osm": { "structure": "lattice" } },
-        { "kod": "K",   "nev": "Keresztmező (K)",    "osm": { "structure": "lattice" } },
-        { "kod": "KR",  "nev": "Keretállás (KR)",    "osm": { "structure": "lattice" } },
-        { "kod": "MKR", "nev": "Mini KR (MKR)",      "osm": { "structure": "lattice", "material": "steel"  } },
-        { "kod": "P",   "nev": "Pörgetett betonacél (P)", "osm": { "structure": "spun", "material": "concrete" } },
-        { "kod": "BM",  "nev": "Betonacél (BM)",     "osm": { "structure": "spun", "material": "concrete" } },
-        { "kod": "CSŐ", "nev": "Acél csőoszlop (CSŐ)", "osm": { "structure": "pole", "material": "steel" } }
+        {
+          "kod": "T",
+          "nev": "Tartó (T)",
+          "osm": {
+            "structure": "frame",
+            "material": "steel"
+          }
+        },
+        {
+          "kod": "L",
+          "nev": "Lengő (L)",
+          "osm": {
+            "structure": "frame",
+            "material": "steel"
+          },
+          "megjegyzes": "Csak portál szerkezetben fordul elő."
+        },
+        {
+          "kod": "Ta",
+          "nev": "Lehorgonyzó (Ta)",
+          "osm": {
+            "structure": "frame"
+          }
+        },
+        {
+          "kod": "F",
+          "nev": "Feszítő (F)",
+          "osm": {
+            "structure": "lattice"
+          }
+        },
+        {
+          "kod": "K",
+          "nev": "Keresztmező (K)",
+          "osm": {
+            "structure": "lattice"
+          }
+        },
+        {
+          "kod": "KR",
+          "nev": "Keretállás (KR)",
+          "osm": {
+            "structure": "lattice"
+          }
+        },
+        {
+          "kod": "MKR",
+          "nev": "Mini KR (MKR)",
+          "osm": {
+            "structure": "lattice",
+            "material": "steel"
+          }
+        },
+        {
+          "kod": "P",
+          "nev": "Pörgetett betonacél (P)",
+          "osm": {
+            "structure": "spun",
+            "material": "concrete"
+          }
+        },
+        {
+          "kod": "BM",
+          "nev": "Betonacél (BM)",
+          "osm": {
+            "structure": "spun",
+            "material": "concrete"
+          }
+        },
+        {
+          "kod": "CSŐ",
+          "nev": "Acél csőoszlop (CSŐ)",
+          "osm": {
+            "structure": "pole",
+            "material": "steel"
+          }
+        },
+        {
+          "kod": "FA",
+          "nev": "Fa oszlop (F)",
+          "osm": {
+            "structure": "trunk"
+          },
+          "megjegyzes": "Az F betű közvetlenül az oszlopszám mögé kerül, szóköz nélkül (pl. 07424F). A fa oszlopnak nincs más funkciója/jelölése, és nem kombinálódik a Tőcsavaros kivitellel."
+        }
       ],
       "gyerek_mezok": [
         {
@@ -184,7 +315,6 @@
         }
       ]
     },
-
     {
       "kod": "mit_tart",
       "nev": "Csoportos tartószerkezet",
@@ -193,18 +323,35 @@
       "alapertelmezett_opcio": "nincs",
       "megjegyzes": "Kézzel megadott mező, mert a valóság néha eltér a típusból várható kiviteltől. A \"nincs\" az alapértelmezett, és nem jelenik meg választható gombként — csak akkor kell beállítani, ha tényleg csoportos szerkezet része.",
       "opciok": [
-        { "kod": "nincs", "nev": "Nincs", "rejtett": true },
-        { "kod": "keresztmezo", "nev": "Keresztmező", "osm": { "catenary_mast:supporting": "head_span" } },
-        { "kod": "portal", "nev": "Keretállás", "osm": { "catenary_mast:supporting": "portal" } }
+        {
+          "kod": "nincs",
+          "nev": "Nincs",
+          "rejtett": true
+        },
+        {
+          "kod": "keresztmezo",
+          "nev": "Keresztmező",
+          "osm": {
+            "catenary_mast:supporting": "head_span"
+          }
+        },
+        {
+          "kod": "portal",
+          "nev": "Keretállás",
+          "osm": {
+            "catenary_mast:supporting": "portal"
+          }
+        }
       ]
     },
-
     {
       "kod": "oszloplehorgonyzas",
       "nev": "Oszloplehorgonyzás",
       "tipus": "checkbox",
       "terkepen": false,
-      "osm": { "guyed": "yes" },
+      "osm": {
+        "guyed": "yes"
+      },
       "gyerek_mezok": [
         {
           "kod": "la_alaptipus",
@@ -212,10 +359,54 @@
           "tipus": "radio",
           "terkepen": false,
           "opciok": [
-            { "kod": "A", "nev": "A" }, { "kod": "B", "nev": "B" }, { "kod": "U", "nev": "U" },
-            { "kod": "C", "nev": "C" }, { "kod": "V", "nev": "V" }, { "kod": "Z", "nev": "Z" },
-            { "kod": "Y", "nev": "Y" }, { "kod": "D", "nev": "D" }, { "kod": "E", "nev": "E" },
-            { "kod": "F", "nev": "F" }, { "kod": "G", "nev": "G" }, { "kod": "LE", "nev": "LE" }
+            {
+              "kod": "A",
+              "nev": "A"
+            },
+            {
+              "kod": "B",
+              "nev": "B"
+            },
+            {
+              "kod": "U",
+              "nev": "U"
+            },
+            {
+              "kod": "C",
+              "nev": "C"
+            },
+            {
+              "kod": "V",
+              "nev": "V"
+            },
+            {
+              "kod": "Z",
+              "nev": "Z"
+            },
+            {
+              "kod": "Y",
+              "nev": "Y"
+            },
+            {
+              "kod": "D",
+              "nev": "D"
+            },
+            {
+              "kod": "E",
+              "nev": "E"
+            },
+            {
+              "kod": "F",
+              "nev": "F"
+            },
+            {
+              "kod": "G",
+              "nev": "G"
+            },
+            {
+              "kod": "LE",
+              "nev": "LE"
+            }
           ]
         },
         {
@@ -241,9 +432,11 @@
       "nev": "Vezeték-kihorgonyzás",
       "tipus": "checkbox",
       "terkepen": false,
-      "osm": { "catenary_mast:attachment": "anchor", "tensioning": "fixed" }
+      "osm": {
+        "catenary_mast:attachment": "anchor",
+        "tensioning": "fixed"
+      }
     },
-
     {
       "kod": "tartoszerkezetek",
       "nev": "Szerkezeti szigetelők",
@@ -253,25 +446,101 @@
       "megjegyzes": "Egy oszlopon 1-3 egyedi tartószerkezet lehet; mindegyik feszítőhuzalos vagy támasztókaros, és 2-2 fix szigetelőhellyel jár: a főkaron mindig csőcsatlakozású, a másik feszítőhuzalos esetén választószigetelő a feszítőhuzalon, támasztókaros esetén csőcsatlakozású a támasztókaron. A csatlakozás módjához nincs hivatalos OSM-tag, ez saját mező marad.",
       "tomeges_anyag_valaszto": true,
       "anyag_opciok": [
-        { "kod": "porcelan", "nev": "Porcelán", "osm": { "insulation:material": "porcelain" } },
-        { "kod": "silicon", "nev": "Szilikon", "osm": { "insulation:material": "silicon" } },
-        { "kod": "isofix",  "nev": "Isofix", "osm": { "insulation:material": "grp" } }
+        {
+          "kod": "porcelan",
+          "nev": "Porcelán",
+          "osm": {
+            "insulation:material": "porcelain"
+          }
+        },
+        {
+          "kod": "silicon",
+          "nev": "Szilikon",
+          "osm": {
+            "insulation:material": "silicon"
+          }
+        },
+        {
+          "kod": "isofix",
+          "nev": "Isofix",
+          "osm": {
+            "insulation:material": "grp"
+          }
+        }
       ]
     },
-
-    { "kod": "hasznos_hossz", "nev": "Hasznos hossz", "tipus": "szam", "terkepen": false, "tizedesek": 1, "mertekegyseg": "m", "megjegyzes": "Pl. 8,4" },
-    { "kod": "teljes_hossz", "nev": "Teljes hossz", "tipus": "szam", "terkepen": false, "tizedesek": 1, "mertekegyseg": "m", "megjegyzes": "Pl. 11,5" },
-
+    {
+      "kod": "hasznos_hossz",
+      "nev": "Hasznos hossz",
+      "tipus": "szam",
+      "terkepen": false,
+      "tizedesek": 1,
+      "mertekegyseg": "m",
+      "megjegyzes": "Pl. 8,4"
+    },
+    {
+      "kod": "teljes_hossz",
+      "nev": "Teljes hossz",
+      "tipus": "szam",
+      "terkepen": false,
+      "tizedesek": 1,
+      "mertekegyseg": "m",
+      "megjegyzes": "Pl. 11,5"
+    },
     {
       "kod": "alaptipus",
       "nev": "Alaptípus",
       "tipus": "radio",
       "terkepen": false,
       "opciok": [
-        { "kod": "A", "nev": "A" }, { "kod": "B", "nev": "B" }, { "kod": "U", "nev": "U" },
-        { "kod": "C", "nev": "C" }, { "kod": "V", "nev": "V" }, { "kod": "Z", "nev": "Z" },
-        { "kod": "Y", "nev": "Y" }, { "kod": "D", "nev": "D" }, { "kod": "E", "nev": "E" },
-        { "kod": "F", "nev": "F" }, { "kod": "G", "nev": "G" }, { "kod": "LE", "nev": "LE" }
+        {
+          "kod": "A",
+          "nev": "A"
+        },
+        {
+          "kod": "B",
+          "nev": "B"
+        },
+        {
+          "kod": "U",
+          "nev": "U"
+        },
+        {
+          "kod": "C",
+          "nev": "C"
+        },
+        {
+          "kod": "V",
+          "nev": "V"
+        },
+        {
+          "kod": "Z",
+          "nev": "Z"
+        },
+        {
+          "kod": "Y",
+          "nev": "Y"
+        },
+        {
+          "kod": "D",
+          "nev": "D"
+        },
+        {
+          "kod": "E",
+          "nev": "E"
+        },
+        {
+          "kod": "F",
+          "nev": "F"
+        },
+        {
+          "kod": "G",
+          "nev": "G"
+        },
+        {
+          "kod": "LE",
+          "nev": "LE"
+        }
       ]
     },
     {
@@ -282,9 +551,30 @@
       "tizedesek": 1,
       "megjegyzes": "Pl. 1,0 — vagy LE esetén szélesség x magasság, pl. 1,9x2,2"
     },
-    { "kod": "betonmennyiseg", "nev": "Teljes betonmennyiség", "tipus": "szam", "terkepen": false, "tizedesek": 2, "mertekegyseg": "m³" },
-    { "kod": "kihuzas_merteke", "nev": "Kihúzás mértéke", "tipus": "szam", "terkepen": false, "tizedesek": 1, "mertekegyseg": "m" },
-    { "kod": "tavolsag_szelvenyezeshez", "nev": "Oszlop távolsága a szelvényezéshez", "tipus": "szam", "terkepen": false, "elojel_kiirasa": true, "megjegyzes": "Csak a számot írd be — a \"+\" jel a megjelenítéskor automatikusan hozzáadódik, pl. +72" },
+    {
+      "kod": "betonmennyiseg",
+      "nev": "Teljes betonmennyiség",
+      "tipus": "szam",
+      "terkepen": false,
+      "tizedesek": 2,
+      "mertekegyseg": "m³"
+    },
+    {
+      "kod": "kihuzas_merteke",
+      "nev": "Kihúzás mértéke",
+      "tipus": "szam",
+      "terkepen": false,
+      "tizedesek": 1,
+      "mertekegyseg": "m"
+    },
+    {
+      "kod": "tavolsag_szelvenyezeshez",
+      "nev": "Oszlop távolsága a szelvényezéshez",
+      "tipus": "szam",
+      "terkepen": false,
+      "elojel_kiirasa": true,
+      "megjegyzes": "Csak a számot írd be — a \"+\" jel a megjelenítéskor automatikusan hozzáadódik, pl. +72"
+    },
     {
       "kod": "oszlopel_vagany_tavolsag",
       "nev": "Oszlopél - vágánytengely távolság",
@@ -310,8 +600,18 @@
         }
       ]
     },
-
-    { "kod": "megjegyzes", "nev": "Megjegyzés", "tipus": "hosszu_szoveg", "terkepen": false },
-    { "kod": "fenykep", "nev": "Fénykép", "tipus": "kep", "terkepen": false, "megjegyzes": "Részletek még megbeszélendők." }
+    {
+      "kod": "megjegyzes",
+      "nev": "Megjegyzés",
+      "tipus": "hosszu_szoveg",
+      "terkepen": false
+    },
+    {
+      "kod": "fenykep",
+      "nev": "Fénykép",
+      "tipus": "kep",
+      "terkepen": false,
+      "megjegyzes": "Részletek még megbeszélendők."
+    }
   ]
 }
