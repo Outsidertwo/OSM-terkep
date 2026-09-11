@@ -354,6 +354,23 @@
       },
       "gyerek_mezok": [
         {
+          "kod": "kivitel",
+          "nev": "Kivitel",
+          "tipus": "radio",
+          "terkepen": false,
+          "megjegyzes": "Helyszíni ellenőrzés alapján töltendő ki; a már felmért oszlopoknál egyelőre üres, amíg nincs terepi adat.",
+          "opciok": [
+            {
+              "kod": "terszini",
+              "nev": "Térszíni"
+            },
+            {
+              "kod": "magasitott",
+              "nev": "Magasított"
+            }
+          ]
+        },
+        {
           "kod": "la_alaptipus",
           "nev": "Lehorgonyzás alaptestének típusa (\"la.\")",
           "tipus": "radio",
