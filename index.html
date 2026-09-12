@@ -106,7 +106,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-12 -- ikon-gomb oszlop (mobil-barát), toldás munkavezeték+tartósodrony checkbox, külön szűrő-rétegek';
+  const BUILD_VERZIO = '2026-09-12b -- pendingSzamlalo dupla eseménykezelő javítva, bejelentkezési hiba láthatóvá téve';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -1767,7 +1767,13 @@
 
   document.getElementById('adatokLetoltesBtn').addEventListener('click', betoltesIndul);
 
-  osmAuth.visszaterasFeldolgozasa().then(() => osmBejelentkezesAllapotFrissit());
+  osmAuth.visszaterasFeldolgozasa().then(eredmeny => {
+    osmBejelentkezesAllapotFrissit();
+    if (eredmeny && eredmeny.hiba) {
+      statusEl.textContent = eredmeny.hiba;
+      statusEl.style.color = 'red';
+    }
+  });
 
   // Ne engedje véletlenül elhagyni az oldalt, ha van még fel nem töltött (helyi) módosítás.
   window.addEventListener('beforeunload', (ev) => {

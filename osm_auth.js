@@ -4,7 +4,7 @@
 //
 // Használat más fájlból:
 //   osmAuth.bejelentkezes()              — átirányít az OSM bejelentkező oldalára
-//   await osmAuth.visszaterasFeldolgozasa() — hívd meg minden oldalbetöltéskor; true, ha most zajlott le sikeres bejelentkezés
+//   await osmAuth.visszaterasFeldolgozasa() — hívd meg minden oldalbetöltéskor; { sikeres, hiba? } -- hiba esetén emberi olvasásra szánt indoklással
 //   osmAuth.tokenVan()                   — van-e mentett hozzáférési token
 //   osmAuth.token()                      — a mentett hozzáférési token (vagy null)
 //   await osmAuth.sajatAdatok()          — a bejelentkezett OSM-felhasználó adatai
@@ -69,7 +69,7 @@ const osmAuth = (function () {
     const parameterek = new URLSearchParams(window.location.search);
     const kod = parameterek.get('code');
     const state = parameterek.get('state');
-    if (!kod) return false;
+    if (!kod) return { sikeres: false };
 
     const mentettState = sessionStorage.getItem(TAROLO_KULCS_STATE);
     const verifier = sessionStorage.getItem(TAROLO_KULCS_VERIFIER);
@@ -82,12 +82,16 @@ const osmAuth = (function () {
     window.history.replaceState({}, document.title, tisztaUrl);
 
     if (!mentettState || state !== mentettState) {
+      const hiba = 'A bejelentkezés megszakadt (state eltérés) -- próbáld újra.';
       console.warn('OSM bejelentkezés: state eltérés, a kérést eldobjuk (esetleg CSRF-kísérlet vagy elévült munkamenet).');
-      return false;
+      return { sikeres: false, hiba };
     }
     if (!verifier) {
+      const hiba = 'A bejelentkezés megszakadt: a böngésző elvesztette az ideiglenes munkamenet-adatot ' +
+        'az OSM-re való átirányítás és a visszatérés között. Ez főleg akkor fordul elő, ha a lap a ' +
+        'háttérben újratöltődött, vagy ha privát/szigorú adatvédelmi böngészési mód van bekapcsolva. Próbáld újra.';
       console.warn('OSM bejelentkezés: hiányzó code_verifier (talán új lapon nyílt meg a visszatérés).');
-      return false;
+      return { sikeres: false, hiba };
     }
 
     const valaszTest = new URLSearchParams({
@@ -98,18 +102,24 @@ const osmAuth = (function () {
       code_verifier: verifier
     });
 
-    const valasz = await fetch(TOKEN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: valaszTest.toString()
-    });
+    let valasz;
+    try {
+      valasz = await fetch(TOKEN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: valaszTest.toString()
+      });
+    } catch (err) {
+      console.error('OSM bejelentkezés: hálózati hiba a token-csere közben.', err);
+      return { sikeres: false, hiba: 'A bejelentkezés megszakadt: hálózati hiba a token-csere közben. Próbáld újra.' };
+    }
     if (!valasz.ok) {
       console.error('OSM bejelentkezés: a token-csere sikertelen volt (' + valasz.status + ').');
-      return false;
+      return { sikeres: false, hiba: `A bejelentkezés sikertelen (${valasz.status}). Próbáld újra.` };
     }
     const adat = await valasz.json();
     localStorage.setItem(TAROLO_KULCS_TOKEN, adat.access_token);
-    return true;
+    return { sikeres: true };
   }
 
   function tokenVan() {
