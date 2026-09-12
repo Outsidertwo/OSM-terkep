@@ -94,7 +94,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-11 -- pending (mentetlen) módosítások listázása és egyenkénti elutasítása';
+  const BUILD_VERZIO = '2026-09-11b -- Földelés bővítve: Felfűzött, Egyedi (méret-mezővel)';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -473,7 +473,12 @@
     // 3. Szikraköz, Fixpont, Földelés, Földelési pont
     if (sajat.szikrakoz) sor('Szikraköz', 'igen');
     if (sajat.fixpont) sor('Fixpont', 'igen');
-    if (sajat.foldeles) sor('Földelés', opcioNev('foldeles', sajat.foldeles));
+    if (sajat.foldeles) {
+      const foldelesNev = opcioNev('foldeles', sajat.foldeles);
+      const foldelesErtek = (sajat.foldeles === 'egyedi' && sajat.foldeles_meret !== '' && sajat.foldeles_meret != null)
+        ? `${foldelesNev} (${sajat.foldeles_meret} m)` : foldelesNev;
+      sor('Földelés', foldelesErtek);
+    }
     if (sajat.foldelesi_pont) sor('Földelési pont', 'igen');
 
     // 4. Súly -- egyetlen sor, a három lehetőség egymást kizárja

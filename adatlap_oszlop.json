@@ -104,7 +104,7 @@
       "nev": "Földelés",
       "tipus": "radio",
       "terkepen": true,
-      "megjegyzes": "Nincs hozzá hivatalos OSM-tag, saját mező marad. A térképi címkén H (hosszú) vagy R (rövid) betűvel jelenik meg.",
+      "megjegyzes": "Nincs hozzá hivatalos OSM-tag, saját mező marad. A térképi címkén H (hosszú), R (rövid), Fe (felfűzött) vagy E (egyedi) betűjellel jelenik meg.",
       "opciok": [
         {
           "kod": "hosszu",
@@ -113,6 +113,25 @@
         {
           "kod": "rovid",
           "nev": "Rövid"
+        },
+        {
+          "kod": "felfuzott",
+          "nev": "Felfűzött"
+        },
+        {
+          "kod": "egyedi",
+          "nev": "Egyedi"
+        }
+      ],
+      "gyerek_mezok": [
+        {
+          "kod": "foldeles_meret",
+          "nev": "Egyedi földelés mérete",
+          "tipus": "szam",
+          "terkepen": false,
+          "tizedesek": 1,
+          "mertekegyseg": "m",
+          "megjegyzes": "Csak Egyedi földelés választása esetén értelmezett."
         }
       ]
     },

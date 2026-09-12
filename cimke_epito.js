@@ -55,6 +55,8 @@
       if (rekord['fixpont']) leiroBitek.push('fx');
       if (rekord['foldeles'] === 'hosszu') leiroBitek.push('H');
       else if (rekord['foldeles'] === 'rovid') leiroBitek.push('R');
+      else if (rekord['foldeles'] === 'felfuzott') leiroBitek.push('Fe');
+      else if (rekord['foldeles'] === 'egyedi') leiroBitek.push('E');
       if (rekord['foldelesi_pont']) leiroBitek.push('fp');
       if (rekord['szakaszolo'] && rekord['szakaszolo_nev']) leiroBitek.push(escapeHtmlCimke(rekord['szakaszolo_nev']));
       if (rekord['trafo'] && rekord['trafo_nev']) leiroBitek.push(escapeHtmlCimke(rekord['trafo_nev']));
