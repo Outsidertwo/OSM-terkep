@@ -71,7 +71,14 @@
   <summary style="cursor:pointer; font-weight:bold;">Megjelenített vonalak</summary>
   <div id="vonalLista" style="margin-top:6px;"></div>
 </details>
-<div id="pendingSzamlalo" style="position:absolute; top:100px; left:320px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:13px; font-weight:bold; max-width:260px;"></div>
+<div id="pendingSzamlalo" style="position:absolute; top:100px; left:320px; z-index:1000; background:white; padding:8px 12px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:13px; font-weight:bold; max-width:260px; cursor:pointer;"></div>
+<div id="pendingListaPanel" style="display:none; position:absolute; top:144px; left:320px; z-index:1001; background:white; padding:12px 14px; border-radius:4px; box-shadow:0 2px 10px rgba(0,0,0,0.4); font-size:13px; max-width:420px; max-height:70vh; overflow-y:auto;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+    <b>Mentetlen módosítások</b>
+    <button onclick="document.getElementById('pendingListaPanel').style.display='none';" style="border:none; background:none; font-size:16px; cursor:pointer; line-height:1;">✕</button>
+  </div>
+  <div id="pendingListaTartalom"></div>
+</div>
 <button id="feltoltesBtn" style="display:none; position:absolute; top:144px; left:320px; z-index:1000; padding:6px 12px; border-radius:4px; border:1px solid #ccc; background:#eef4ff; font-size:14px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.4);">
   Változások feltöltése
 </button>
@@ -87,7 +94,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-08b -- popup átrendezés/összevonás (súly, trafó, lehorgonyzás), OSM node ID csak bejelentkezve, GPS enableHighAccuracy';
+  const BUILD_VERZIO = '2026-09-11 -- pending (mentetlen) módosítások listázása és egyenkénti elutasítása';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -968,6 +975,67 @@
     return feats;
   }
 
+  // A pendingSzamlalo dobozra kattintva nyíló lista -- soronként a pending rekord TELJES,
+  // a popuppal megegyező mezőlistáját mutatja (epitsOszlopSajatSort újrahasznosítva), mert
+  // a tömör címke önmagában nem tükrözné a rajta nem szereplő mezők (hossz, alaptípus,
+  // transzformátor stb.) változásait. Elutasításkor megerősítés után törli a pending
+  // tételt, és a térképet/popupot visszaállítja az utolsó GitHub-mentett állapotra.
+  function pendingListaFrissit() {
+    const tartalomEl = document.getElementById('pendingListaTartalom');
+    const panelEl = document.getElementById('pendingListaPanel');
+    if (!tartalomEl || !panelEl || typeof githubMentes === 'undefined') return;
+    const pending = githubMentes.pendingOlvasas();
+    const bejegyzesek = Object.entries(pending);
+    if (bejegyzesek.length === 0) {
+      panelEl.style.display = 'none';
+      tartalomEl.innerHTML = '';
+      return;
+    }
+    const most = Date.now();
+    const TIZENKET_ORA_MS = 12 * 60 * 60 * 1000;
+    tartalomEl.innerHTML = bejegyzesek.map(([osmId, p]) => {
+      const rekord = p.rekord || {};
+      const regi = (() => {
+        const mentve = Date.parse(p.mentesIdo);
+        return !isNaN(mentve) && (most - mentve) > TIZENKET_ORA_MS;
+      })();
+      const fejlec = escapeHtml(rekord.szam || `(#${osmId})`) +
+        (rekord._vonal ? ` — ${escapeHtml(rekord._vonal)}` : '') +
+        (regi ? ' <span style="color:#b30000;" title="12 óránál régebbi mentés">⚠</span>' : '');
+      const reszletek = epitsOszlopSajatSort(rekord) ||
+        '<div style="color:#999; font-size:12px;">(nincs kitöltött mező)</div>';
+      return `<div style="border-top:1px solid #ddd; padding:8px 0;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <b>${fejlec}</b>
+          <button data-elutasit-osmid="${escapeHtml(String(osmId))}"
+                  style="border:1px solid #cc0000; color:#cc0000; background:white; border-radius:4px; padding:3px 8px; font-size:12px; cursor:pointer;">
+            Elutasítás
+          </button>
+        </div>
+        ${reszletek}
+      </div>`;
+    }).join('');
+
+    tartalomEl.querySelectorAll('[data-elutasit-osmid]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const osmId = btn.getAttribute('data-elutasit-osmid');
+        if (!confirm('Biztosan elveted ennek az oszlopnak a mentetlen, helyi módosítását? Ez nem vonható vissza.')) return;
+        githubMentes.pendingTorles(osmId);
+        osszesFeature = featureekOsszefesulese(osszesFeature, sajatAdatokFeatureKent());
+        alkalmazSzurokEsRajzol(); // ez frissíti a pendingSzamlalot is
+        pendingListaFrissit();
+      });
+    });
+  }
+
+  function pendingListaMegnyitasa() {
+    pendingListaFrissit();
+    const panelEl = document.getElementById('pendingListaPanel');
+    if (panelEl) panelEl.style.display = panelEl.style.display === 'none' ? '' : 'none';
+  }
+
+  document.getElementById('pendingSzamlalo').addEventListener('click', pendingListaMegnyitasa);
+
   // A "Megjelenített vonalak" panel közelében lévő pending-számláló frissítése -- akkor kell
   // hívni, amikor a pending-lista változhatott (minden újrarajzoláskor, alkalmazSzurokEsRajzol
   // elején, illetve cross-tab storage-eseményre).
@@ -979,6 +1047,8 @@
     if (feltoltesBtnEl) feltoltesBtnEl.style.display = darab > 0 ? '' : 'none';
     if (darab === 0) {
       el.textContent = '';
+      const panelEl = document.getElementById('pendingListaPanel');
+      if (panelEl) panelEl.style.display = 'none';
       return;
     }
     const pending = githubMentes.pendingOlvasas();
