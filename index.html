@@ -94,7 +94,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-11b -- Földelés bővítve: Felfűzött, Egyedi (méret-mezővel)';
+  const BUILD_VERZIO = '2026-09-11c -- Szerkezeti szigetelők (tartószerkezetek) megjelenítése a popupon';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -500,6 +500,22 @@
 
     // 7. Csoportos tartószerkezet ("nincs" nem jelenik meg)
     if (sajat.mit_tart && sajat.mit_tart !== 'nincs') sor('Csoportos tartószerkezet', opcioNev('mit_tart', sajat.mit_tart));
+
+    // 7b. Szerkezeti szigetelők (tartószerkezetek) -- eddig teljesen hiányzott a popupról,
+    // mert nested tömb, amit a generikus mezőlistázó nem tudott értelmesen kiírni.
+    // Anyagkódok fordítása: nem "opciok", hanem "anyag_opciok" a sémában, ezért itt
+    // helyben, kis szótárral fordítjuk (csak ez a három állandó érték létezik).
+    const SZIGETELO_ANYAG_NEV = { porcelan: 'Porcelán', silicon: 'Szilikon', isofix: 'Isofix' };
+    if (Array.isArray(sajat.tartoszerkezetek) && sajat.tartoszerkezetek.length > 0) {
+      sajat.tartoszerkezetek.forEach((ts, i) => {
+        const tipusNev = ts.tipus === 'tamasztokaros' ? 'Támasztókaros' : 'Feszítőhuzalos';
+        const masodikCimke = ts.tipus === 'tamasztokaros' ? 'Támasztókar' : 'Feszítőhuzal';
+        const reszek = [];
+        if (ts.fokar_anyag) reszek.push(`Főkar – ${SZIGETELO_ANYAG_NEV[ts.fokar_anyag] || ts.fokar_anyag}`);
+        if (ts.masodik_anyag) reszek.push(`${masodikCimke} – ${SZIGETELO_ANYAG_NEV[ts.masodik_anyag] || ts.masodik_anyag}`);
+        sor(`Szerkezeti szigetelő ${i + 1} (${tipusNev})`, reszek.join(', '));
+      });
+    }
 
     // 8. Oszlop típusa (tőcsavaros kivitel jelezve, ha van)
     if (sajat.oszlop_tipus) {
