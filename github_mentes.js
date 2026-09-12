@@ -21,6 +21,15 @@ const githubMentes = (function () {
     return `sajat_adatok/${vonalKod}.ndjson`;
   }
 
+  // A vezeték-toldások (sosem kerülnek OSM-re, saját azonosítójuk van, nem OSM node)
+  // teljesen külön fájlba kerülnek vonalanként, hogy az oszlop-rekordok feldolgozó
+  // logikáját (OSM-tag-generálás, Overpass-egyesítés) ne kelljen ehhez az egészen más
+  // adatszerkezethez igazítani.
+  function fajlUtvonalToldasok(vonalKod) {
+    if (!vonalKod) throw new Error('Nincs megadva, melyik vonalhoz tartozik a mentendő toldás (vonalKod hiányzik).');
+    return `sajat_adatok/${vonalKod}_toldasok.ndjson`;
+  }
+
   function tokenBeallitasa(t) { localStorage.setItem(TAROLO_KULCS, t.trim()); }
   function token() { return localStorage.getItem(TAROLO_KULCS); }
   function tokenVan() { return !!token(); }
@@ -267,8 +276,103 @@ const githubMentes = (function () {
     }
   }
 
+  // --- Vezeték-toldások -- saját, párhuzamos pending-tároló és feltöltés ---
+  //
+  // Ugyanaz a minta, mint az oszlopoknál (offline-first: helyi puffer, majd kötegelt
+  // feltöltés), de külön localStorage-kulccsal és külön fájllal, mert a toldás sosem
+  // OSM node -- nincs _osm_id-ja, saját generált `id` mezője azonosítja.
+
+  const PENDING_TOLDAS_KULCS = 'pending_toldasok';
+
+  function pendingToldasOlvasas() {
+    try {
+      const nyers = localStorage.getItem(PENDING_TOLDAS_KULCS);
+      return nyers ? JSON.parse(nyers) : {};
+    } catch (err) {
+      console.warn('Nem sikerült beolvasni a mentetlen toldásokat:', err);
+      return {};
+    }
+  }
+
+  function pendingToldasIrasa(pending) {
+    try {
+      localStorage.setItem(PENDING_TOLDAS_KULCS, JSON.stringify(pending));
+    } catch (err) {
+      console.warn('Nem sikerült elmenteni a toldást (localStorage hiba):', err);
+      throw err;
+    }
+  }
+
+  function pendingToldasMentese(id, rekord, vonalKod) {
+    const pending = pendingToldasOlvasas();
+    pending[String(id)] = { rekord, vonalKod, mentesIdo: new Date().toISOString() };
+    pendingToldasIrasa(pending);
+    return pending;
+  }
+
+  function pendingToldasTorles(id) {
+    const pending = pendingToldasOlvasas();
+    delete pending[String(id)];
+    pendingToldasIrasa(pending);
+    return pending;
+  }
+
+  function pendingToldasDarab() {
+    return Object.keys(pendingToldasOlvasas()).length;
+  }
+
+  // Kötegelt feltöltés egy vonal toldás-fájljába -- `id` mező szerint illeszt, nem
+  // _osm_id szerint. Ugyanaz a SHA-ütközés-kezelés (újrapróbálkozás), mint az oszlopoknál.
+  // tetelek: [{ id, rekord }, ...]
+  async function pendingToldasFeltoltesVonalra(vonalKod, tetelek, maxProbalkozas = 3) {
+    const path = `/repos/${REPO}/contents/${fajlUtvonalToldasok(vonalKod)}`;
+    for (let probalkozas = 1; probalkozas <= maxProbalkozas; probalkozas++) {
+      const getValasz = await githubFetch(`${path}?ref=${BRANCH}`, { method: 'GET' });
+      let sorok = [];
+      let sha = null;
+      if (getValasz.status === 200) {
+        const adat = await getValasz.json();
+        sha = adat.sha;
+        sorok = b64Decode(adat.content.replace(/\n/g, '')).split('\n').filter(s => s.trim() !== '');
+      } else if (getValasz.status !== 404) {
+        const hibaSzoveg = await getValasz.text().catch(() => '');
+        throw new Error(`Nem sikerült lekérni a jelenlegi toldás-fájlt (${getValasz.status}): ${hibaSzoveg}`);
+      }
+
+      const idKulcsSzerint = new Map();
+      sorok.forEach((sor, i) => {
+        try { const o = JSON.parse(sor); if (o.id) idKulcsSzerint.set(String(o.id), i); }
+        catch (e) { /* hibás sor, kihagyva az indexelésből, de a sor megmarad érintetlenül */ }
+      });
+      tetelek.forEach(({ id, rekord }) => {
+        const idx = idKulcsSzerint.get(String(id));
+        if (idx != null) sorok[idx] = JSON.stringify(rekord);
+        else sorok.push(JSON.stringify(rekord));
+      });
+
+      const body = {
+        message: `${tetelek.length} vezeték-toldás mentése (${vonalKod})`,
+        content: b64Encode(sorok.join('\n') + '\n'),
+        branch: BRANCH
+      };
+      if (sha) body.sha = sha;
+
+      const putValasz = await githubFetch(path, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (putValasz.ok) return await putValasz.json();
+      if (putValasz.status === 409 && probalkozas < maxProbalkozas) continue;
+      const hibaSzoveg = await putValasz.text().catch(() => '');
+      throw new Error(`Toldás-feltöltés sikertelen (${putValasz.status}) ${maxProbalkozas} próbálkozás után: ${hibaSzoveg}`);
+    }
+  }
+
   return {
     tokenBeallitasa, token, tokenVan, tokenTorlese, rekordMentese, ujRekordokKotegeltMentese,
-    pendingOlvasas, pendingMentese, pendingTorles, pendingDarab, pendingFeltoltesVonalra
+    pendingOlvasas, pendingMentese, pendingTorles, pendingDarab, pendingFeltoltesVonalra,
+    fajlUtvonalToldasok, pendingToldasOlvasas, pendingToldasMentese, pendingToldasTorles,
+    pendingToldasDarab, pendingToldasFeltoltesVonalra
   };
 })();

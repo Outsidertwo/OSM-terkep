@@ -14,22 +14,11 @@
       }
     },
     {
-      "kod": "felsovezetek_tartas",
-      "nev": "Felsővezeték-tartás",
-      "tipus": "radio",
+      "kod": "felsovezetektarto",
+      "nev": "Felsővezetéktartó",
+      "tipus": "checkbox",
       "terkepen": false,
-      "alapertelmezett_opcio": "catenary_mast",
-      "megjegyzes": "Vannak olyan oszlopok, amik a rendszer szerves részei (az oszlopszámuk folyamatosan illeszkedik a felsővezeték-tartó oszlopok közé), de a valóságban nem tartanak felsővezetéket -- ezek helyesen power=pole-lal mentendők power=catenary_mast helyett. A térképen és a szűrőben mindkettő ugyanabban a Felsővezeték-oszlop kategóriában jelenik meg, csak a mentett OSM power= tag különbözik.",
-      "opciok": [
-        {
-          "kod": "catenary_mast",
-          "nev": "Felsővezeték-tartó (catenary_mast)"
-        },
-        {
-          "kod": "pole",
-          "nev": "Nem tart felsővezetéket (pole)"
-        }
-      ]
+      "megjegyzes": "Alapból bepipálva (= power=catenary_mast). Vannak olyan oszlopok, amik a rendszer szerves részei (az oszlopszámuk folyamatosan illeszkedik a felsővezeték-tartó oszlopok közé), de a valóságban nem tartanak felsővezetéket -- ezeknél kipipálatlanul hagyva power=pole-lal mentődik. A térképen és a szűrőben mindkettő ugyanabban a Felsővezeték-oszlop kategóriában jelenik meg, csak a mentett OSM power= tag különbözik."
     },
     {
       "kod": "sulyos",

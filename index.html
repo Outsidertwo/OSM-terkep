@@ -82,6 +82,27 @@
 <button id="feltoltesBtn" style="display:none; position:absolute; top:144px; left:320px; z-index:1000; padding:6px 12px; border-radius:4px; border:1px solid #ccc; background:#eef4ff; font-size:14px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.4);">
   Változások feltöltése
 </button>
+<button id="toldasModBtn" style="display:none; position:absolute; top:100px; left:590px; z-index:1000; padding:6px 12px; border-radius:4px; border:1px solid #ccc; background:white; font-size:14px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.4);">
+  ➕ Toldás felvétele
+</button>
+<div id="toldasSzamlalo" style="position:absolute; top:144px; left:590px; z-index:1000; background:white; padding:6px 10px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.4); font-size:12px; color:#b36b00; cursor:pointer;"></div>
+<div id="toldasUrlapPanel" style="display:none; position:absolute; top:100px; left:590px; z-index:1001; background:white; padding:12px 14px; border-radius:4px; box-shadow:0 2px 10px rgba(0,0,0,0.4); font-size:13px; max-width:270px;">
+  <b>Új vezeték-toldás</b>
+  <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">
+    <label>Vonal<br><select id="toldasVonalSelect" style="width:100%; padding:4px;"></select></label>
+    <label>Áramkör<br><input id="toldasAramkorInput" type="text" style="width:100%; padding:4px; box-sizing:border-box;"></label>
+    <label>Vágány<br><input id="toldasVaganyInput" type="text" style="width:100%; padding:4px; box-sizing:border-box;"></label>
+    <label>Hosszlánc<br><input id="toldasHosszlancInput" type="text" style="width:100%; padding:4px; box-sizing:border-box;"></label>
+    <div>
+      <label><input type="radio" name="toldasVezetekTipus" value="munkavezetek" checked> Munkavezeték</label><br>
+      <label><input type="radio" name="toldasVezetekTipus" value="tartosodrony"> Tartósodrony</label>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:6px;">
+      <button id="toldasMentesBtn" style="flex:1; padding:6px; border-radius:4px; border:1px solid #ccc; background:#eef4ff; cursor:pointer;">Mentés</button>
+      <button id="toldasMegseBtn" style="flex:1; padding:6px; border-radius:4px; border:1px solid #ccc; background:white; cursor:pointer;">Mégse</button>
+    </div>
+  </div>
+</div>
 
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -94,7 +115,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-11d -- power=pole oszlopok is megjelennek a Felsővezeték-oszlop kategóriában';
+  const BUILD_VERZIO = '2026-09-11f -- Vezeték-toldások: felvétel térképre-koppintással, saját pending/feltöltés, megjelenítés';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -139,6 +160,172 @@
     locateOptions: { enableHighAccuracy: true }
   }).addTo(map);
 
+  // --- Vezeték-toldások -- új objektumtípus, sosem kerül OSM-re, saját generált id-val
+  // azonosítva, helyzetük térképre koppintással kerül rögzítésre (eddig minden objektum
+  // meglévő OSM node-ból indult, ez strukturálisan új képesség). Rossz koppintás esetén
+  // egyszerűen törlés + újra felvétel a javítás módja, nincs húzd-áthelyezd funkció.
+  const toldasLayer = L.layerGroup().addTo(map);
+  let toldasFelveteliMod = false;
+  let toldasIdeiglenesLatLng = null;
+
+  function toldasVezetekTipusNev(kod) {
+    return kod === 'tartosodrony' ? 'Tartósodrony' : 'Munkavezeték';
+  }
+
+  function toldasVonalSelectFeltoltes() {
+    const sel = document.getElementById('toldasVonalSelect');
+    if (!sel) return;
+    sel.innerHTML = VONALAK.filter(v => v.aktiv)
+      .map(v => `<option value="${escapeHtml(vonalKodja(v))}">${escapeHtml(v.nev)}</option>`).join('');
+  }
+
+  function toldasMarkerHozzaadas(rekord, pendingE) {
+    const marker = L.circleMarker([rekord.lat, rekord.lon], {
+      radius: 7, color: pendingE ? '#cc6600' : '#555', weight: 2,
+      fillColor: pendingE ? '#ffcc80' : '#bbb', fillOpacity: 0.9
+    });
+    const reszek = [];
+    if (rekord.aramkor) reszek.push(`Áramkör: ${escapeHtml(rekord.aramkor)}`);
+    if (rekord.vagany) reszek.push(`Vágány: ${escapeHtml(rekord.vagany)}`);
+    if (rekord.hosszlanc) reszek.push(`Hosszlánc: ${escapeHtml(rekord.hosszlanc)}`);
+    reszek.push(`Vezeték: ${toldasVezetekTipusNev(rekord.vezetek_tipus)}`);
+    let html = `<b>Vezeték-toldás</b><br>${reszek.join('<br>')}`;
+    if (pendingE) {
+      html += `<br><button data-toldas-torles-id="${escapeHtml(rekord.id)}" ` +
+        `style="margin-top:6px; border:1px solid #cc0000; color:#cc0000; background:white; border-radius:4px; padding:3px 8px; font-size:12px; cursor:pointer;">Törlés</button>`;
+    }
+    marker.bindPopup(html);
+    marker.on('popupopen', () => {
+      const btn = document.querySelector(`[data-toldas-torles-id="${rekord.id}"]`);
+      if (btn) btn.addEventListener('click', () => {
+        if (!confirm('Biztosan törlöd ezt a még fel nem töltött toldást?')) return;
+        githubMentes.pendingToldasTorles(rekord.id);
+        toldasLayer.removeLayer(marker);
+        toldasSzamlaloFrissites();
+      });
+    });
+    toldasLayer.addLayer(marker);
+    return marker;
+  }
+
+  function toldasModValt() {
+    toldasFelveteliMod = !toldasFelveteliMod;
+    const btn = document.getElementById('toldasModBtn');
+    if (!btn) return;
+    btn.style.background = toldasFelveteliMod ? '#ffe9a8' : 'white';
+    btn.textContent = toldasFelveteliMod ? '📍 Koppints a térképre…' : '➕ Toldás felvétele';
+  }
+
+  map.on('click', (e) => {
+    if (!toldasFelveteliMod) return;
+    toldasIdeiglenesLatLng = e.latlng;
+    toldasVonalSelectFeltoltes();
+    document.getElementById('toldasUrlapPanel').style.display = '';
+    toldasModValt(); // kikapcsolja a felvételi módot, amint egy pontot kijelöltünk
+  });
+
+  document.getElementById('toldasModBtn').addEventListener('click', toldasModValt);
+
+  document.getElementById('toldasMegseBtn').addEventListener('click', () => {
+    document.getElementById('toldasUrlapPanel').style.display = 'none';
+    toldasIdeiglenesLatLng = null;
+  });
+
+  document.getElementById('toldasMentesBtn').addEventListener('click', () => {
+    if (!toldasIdeiglenesLatLng) return;
+    const vonalKod = document.getElementById('toldasVonalSelect').value;
+    if (!vonalKod) { alert('Nincs kiválasztható (aktív) vonal.'); return; }
+    const id = 'toldas_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+    const rekord = {
+      id,
+      lat: toldasIdeiglenesLatLng.lat,
+      lon: toldasIdeiglenesLatLng.lng,
+      aramkor: document.getElementById('toldasAramkorInput').value.trim(),
+      vagany: document.getElementById('toldasVaganyInput').value.trim(),
+      hosszlanc: document.getElementById('toldasHosszlancInput').value.trim(),
+      vezetek_tipus: document.querySelector('input[name="toldasVezetekTipus"]:checked').value,
+      letrehozva: new Date().toISOString()
+    };
+    githubMentes.pendingToldasMentese(id, rekord, vonalKod);
+    toldasMarkerHozzaadas(rekord, true);
+    document.getElementById('toldasUrlapPanel').style.display = 'none';
+    document.getElementById('toldasAramkorInput').value = '';
+    document.getElementById('toldasVaganyInput').value = '';
+    document.getElementById('toldasHosszlancInput').value = '';
+    toldasIdeiglenesLatLng = null;
+    toldasSzamlaloFrissites();
+  });
+
+  // Már feltöltött (GitHub-on lévő) toldások betöltése -- egyelőre csak megjelenítés,
+  // törlés/szerkesztés rájuk egyelőre nincs (kevés tétel várható, ~50 db összesen).
+  async function toldasokBetoltese() {
+    for (const vonal of VONALAK.filter(v => v.aktiv)) {
+      const vonalKod = vonalKodja(vonal);
+      try {
+        const res = await fetch(`./sajat_adatok/${vonalKod}_toldasok.ndjson`, { cache: 'no-store' });
+        if (!res.ok) { if (res.status !== 404) console.warn(`toldások (${vonalKod}) betöltése sikertelen:`, res.status); continue; }
+        const szoveg = await res.text();
+        szoveg.split('\n').filter(s => s.trim() !== '').forEach(sor => {
+          try {
+            const rekord = JSON.parse(sor);
+            if (rekord.id) toldasMarkerHozzaadas(rekord, false);
+          } catch (err) { console.warn('Hibás toldás-sor kihagyva:', err); }
+        });
+      } catch (err) {
+        console.warn(`toldások (${vonalKod}) betöltése sikertelen:`, err);
+      }
+    }
+  }
+
+  function toldasSzamlaloFrissites() {
+    const el = document.getElementById('toldasSzamlalo');
+    if (!el || typeof githubMentes === 'undefined') return;
+    const darab = githubMentes.pendingToldasDarab();
+    el.textContent = darab > 0 ? `⚠ ${darab} mentetlen toldás` : '';
+  }
+
+  async function toldasFeltoltesIndul() {
+    if (typeof githubMentes === 'undefined' || !githubMentes.tokenVan()) {
+      alert('A feltöltéshez be kell állítani a GitHub tokent -- nyiss meg egy oszlopot Szerkesztésre, ott az adatlapon található a token-beállítás.');
+      return;
+    }
+    const pending = githubMentes.pendingToldasOlvasas();
+    const idk = Object.keys(pending);
+    if (idk.length === 0) return;
+
+    const vonalankent = new Map();
+    idk.forEach(id => {
+      const p = pending[id];
+      if (!vonalankent.has(p.vonalKod)) vonalankent.set(p.vonalKod, []);
+      vonalankent.get(p.vonalKod).push({ id, rekord: p.rekord });
+    });
+
+    const sikeresVonalak = [];
+    const sikertelenVonalak = [];
+    for (const [vonalKod, tetelek] of vonalankent) {
+      statusEl.textContent = `Toldások feltöltése: ${vonalKod} (${tetelek.length} db)...`;
+      try {
+        await githubMentes.pendingToldasFeltoltesVonalra(vonalKod, tetelek);
+        tetelek.forEach(({ id }) => githubMentes.pendingToldasTorles(id));
+        sikeresVonalak.push(vonalKod);
+      } catch (err) {
+        console.warn('Toldás kötegelt feltöltés sikertelen:', vonalKod, err);
+        sikertelenVonalak.push({ vonalKod, hiba: err.message });
+      }
+    }
+    toldasSzamlaloFrissites();
+    if (sikertelenVonalak.length === 0) {
+      statusEl.textContent = `Toldások feltöltve: ${sikeresVonalak.join(', ')}.`;
+      statusEl.style.color = '#2a7d2a';
+    } else {
+      const hibaLista = sikertelenVonalak.map(s => `${s.vonalKod}: ${s.hiba}`).join('; ');
+      statusEl.textContent = (sikeresVonalak.length > 0 ? `Feltöltve: ${sikeresVonalak.join(', ')}. ` : '') +
+        `Toldás-feltöltés sikertelen (megmaradt): ${hibaLista}`;
+      statusEl.style.color = 'red';
+    }
+  }
+  document.getElementById('toldasSzamlalo').addEventListener('click', toldasFeltoltesIndul);
+
   // --- Kompakt OSM bejelentkezés-gomb (a GPS gomb alá kerül) ---
   const OsmBejelentkezesControl = L.Control.extend({
     options: { position: 'topleft' },
@@ -160,14 +347,17 @@
   const osmBejelentkezesLink = osmBejelentkezesControl._link;
 
   function osmBejelentkezesAllapotFrissit() {
+    const toldasModBtnEl = document.getElementById('toldasModBtn');
     if (!osmAuth.tokenVan()) {
       osmBejelentkezesLink.textContent = '🔒';
       osmBejelentkezesLink.title = 'Bejelentkezés OSM-mel';
       osmBejelentkezesLink.onOsmClick = () => osmAuth.bejelentkezes();
       osmSzerkesztesEngedelyezve = false;
+      if (toldasModBtnEl) toldasModBtnEl.style.display = 'none';
       if (typeof vonalListaKirajzolas === 'function' && VONALAK.length) vonalListaKirajzolas();
       return;
     }
+    if (toldasModBtnEl) toldasModBtnEl.style.display = '';
     osmBejelentkezesLink.textContent = '🔓';
     osmBejelentkezesLink.title = 'Bejelentkezve — kattints a kijelentkezéshez';
     osmBejelentkezesLink.onOsmClick = () => {
@@ -1450,6 +1640,8 @@
       alkalmazSzurokEsRajzol();
       statusEl.textContent = `${sajatAdatokTerkep.size} mentett oszlop betöltve. Válaszd ki a vonalakat, majd "Adatok letöltése" a frissítéshez.`;
     }
+    await toldasokBetoltese();
+    toldasSzamlaloFrissites();
     console.log('[DIAG] inditas() befejeződött');
   }
   inditas();
