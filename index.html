@@ -94,7 +94,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-11c -- Szerkezeti szigetelők (tartószerkezetek) megjelenítése a popupon';
+  const BUILD_VERZIO = '2026-09-11d -- power=pole oszlopok is megjelennek a Felsővezeték-oszlop kategóriában';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -257,7 +257,7 @@
       label: 'Felsővezeték-oszlop',
       color: '#1ae86b',
       shape: 'circle',
-      test: (t) => t.power === 'catenary_mast',
+      test: (t) => t.power === 'catenary_mast' || t.power === 'pole',
       // A címke-építés a cimke_epito.js közös epitsCimkeHtml() függvényével történik,
       // ugyanazzal a logikával, mint az adatlapon (lásd B pont) -- a mentett rekordot
       // (t._sajat) adjuk át neki, nem a nyers OSM tageket, mert a leíró jelzők
