@@ -53,6 +53,23 @@
 </style>
 </head>
 <body>
+<!-- IDEIGLENES DIAGNOSZTIKA (2026-09-15): a mobil OSM-bejelentkezés hibájának
+     kereséséhez -- megmutatja a böngésző címsorában ténylegesen megérkező
+     teljes URL-t, MÉG MIELŐTT bármelyik script (osm_auth.js is) hozzáérne.
+     Ha ez lefut, a doboz a képernyő tetején marad, amíg el nem tünteted
+     (a "✕" gombbal), hogy nyugodtan el lehessen olvasni/lefényképezni.
+     Ha a munka végeztével ez a hiba megoldódott, ez a blokk (a #diagCimsor
+     div + a hozzá tartozó script) kivehető. -->
+<div id="diagCimsor" style="display:none; position:fixed; top:0; left:0; right:0; z-index:99999; background:#111; color:#7fff7f; font-size:12px; padding:8px 32px 8px 8px; word-break:break-all; font-family:monospace; line-height:1.4;">
+  <button onclick="document.getElementById('diagCimsor').style.display='none';" style="position:absolute; top:4px; right:6px; background:none; border:none; color:#fff; font-size:16px; cursor:pointer; line-height:1;">✕</button>
+</div>
+<script>
+(function () {
+  var d = document.getElementById('diagCimsor');
+  d.textContent = 'DIAG teljes URL a betöltéskor: ' + location.href;
+  d.style.display = 'block';
+})();
+</script>
 <div id="map"></div>
 <div id="mobilElemNezet" style="display:none; position:fixed; inset:0; z-index:3000; background:white; overflow-y:auto; -webkit-overflow-scrolling:touch;">
   <div style="position:sticky; top:0; background:white; border-bottom:1px solid #ddd; padding:10px 14px; display:flex; justify-content:flex-end; align-items:center;">
