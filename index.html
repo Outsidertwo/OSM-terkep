@@ -107,7 +107,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-16 -- OSM write-back (C pont, v1: additív, ütközésnél kihagyás) bekötve a feltöltésbe';
+  const BUILD_VERZIO = '2026-09-16b -- GPS mindig követ, szerkesztés után visszaugrás az oszlopra';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -149,6 +149,8 @@
     position: 'topleft',
     strings: { title: 'Saját pozícióm' },
     flyTo: true,
+    setView: 'always', // mindig kövesse a térkép a felhasználót, ne álljon le követni egy
+                        // véletlen érintésre/mozdításra (2026-09-16, kérésre)
     locateOptions: { enableHighAccuracy: true }
   }).addTo(map);
 
@@ -917,7 +919,7 @@
       }
       const kodolt = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(payload)))));
       gombok = `<div style="margin-top:8px; display:flex; gap:6px;">
-        <button onclick="window.open('adatlap.html?adat=${kodolt}', '_blank')"
+        <button onclick="szerkesztesIndul('${kodolt}', ${lat}, ${lon})"
                 style="font-size:13px; padding:4px 10px; border:1px solid #ccc; border-radius:4px; background:#f0f0f0; cursor:pointer;">
           Szerkesztés
         </button>
@@ -925,6 +927,33 @@
     }
 
     return `${osmIdSor}<table class="popup-table">${rows}</table>${sajatSor}${gombok}`;
+  }
+
+  // A "Szerkesztés" gomb ezt hívja meg közvetlenül a window.open() helyett: előtte elmenti
+  // a szerkesztett oszlop pozícióját, hogy oldalbetöltéskor (lásd
+  // utolsoSzerkesztettOszlopMegjelenitese()) a térkép automatikusan visszatérhessen rá --
+  // mobilon ugyanis a szerkesztő új fülként/ablakként nyílik, de ha a böngésző emiatt a
+  // háttérben újratölti a főoldalt, addig az alapértelmezett, kizoomolt nézetre esne vissza.
+  function szerkesztesIndul(kodolt, lat, lon) {
+    try {
+      localStorage.setItem('utolsoSzerkesztettOszlop', JSON.stringify({ lat, lon, ts: Date.now() }));
+    } catch (err) { /* localStorage hiba esetén sem szakítjuk meg a szerkesztést */ }
+    window.open('adatlap.html?adat=' + kodolt, '_blank');
+  }
+
+  // Oldalbetöltéskor ellenőrzi, van-e nemrég (max 15 percen belül) elmentett "utoljára
+  // szerkesztett oszlop" pozíció -- ha van, a térkép arra ugrik, majd a bejegyzés törlődik,
+  // hogy egy szokásos, később történő belépésnél ne zavarjon be.
+  function utolsoSzerkesztettOszlopMegjelenitese() {
+    try {
+      const nyers = localStorage.getItem('utolsoSzerkesztettOszlop');
+      if (!nyers) return;
+      localStorage.removeItem('utolsoSzerkesztettOszlop');
+      const adat = JSON.parse(nyers);
+      if (!adat || typeof adat.lat !== 'number' || typeof adat.lon !== 'number') return;
+      if (Date.now() - adat.ts > 15 * 60 * 1000) return;
+      map.setView([adat.lat, adat.lon], 18);
+    } catch (err) { /* nincs mit tenni, marad az alapértelmezett nézet */ }
   }
 
   function classify(tags) {
@@ -1808,6 +1837,7 @@
     }
     await toldasokBetoltese();
     toldasSzamlaloFrissites();
+    utolsoSzerkesztettOszlopMegjelenitese();
     console.log('[DIAG] inditas() befejeződött');
   }
   inditas();

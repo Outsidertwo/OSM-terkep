@@ -2,7 +2,7 @@
 // feszítési terv konverter. Csak ezt a fájlt kell módosítani új logikai
 // finomításnál — az adatlap_teszt.html-hez nem kell hozzányúlni.
 
-  const BUILD_VERZIO = '2026-09-16 -- megjegyzés frissítve: az OSM-tagek már automatikusan felkerülnek OSM-re is';
+  const BUILD_VERZIO = '2026-09-16b -- insulator=post tag eltávolítva (nem szabványos OSM-kulcs)';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -501,15 +501,17 @@
     }
     feldolgoz(sema.mezok);
 
-    // Szigetelők: az insulator=post mindig fix (nincs hivatalos tag a csatlakozás módjára),
-    // az insulation:material a tömeges választásból jön, ha van; ha nincs, csak akkor,
-    // ha minden tartószerkezet mindkét szigetelőjén ugyanaz az anyag.
+    // Szigetelők: az insulation:material a tömeges választásból jön, ha van; ha nincs,
+    // csak akkor, ha minden tartószerkezet mindkét szigetelőjén ugyanaz az anyag.
+    // (Megjegyzés, 2026-09-16: korábban itt egy fix insulator='post' tag is bekerült, de ez
+    // nem szabványos OSM-kulcs -- a hivatalos, erre a célra elfogadott tag a
+    // line_attachment=* lenne, de mivel nem egyértelmű, melyik értéknek felelne meg
+    // pontosan, inkább nem írunk semmit, amíg ez tisztázatlan.)
     const semaTartoszerkezetek = megtalalMezo(sema.mezok, 'tartoszerkezetek');
     const osszesAnyag = tartoszerkezetek.flatMap(ts => [ts.fokar_anyag, ts.masodik_anyag]).filter(Boolean);
     const vanBarmilyenSzigetelo = tartoszerkezetek.length > 0 || !!tomegesSzigeteloAnyag;
 
     if (vanBarmilyenSzigetelo) {
-      tagek['insulator'] = 'post';
       let anyagKod = tomegesSzigeteloAnyag || null;
       if (!anyagKod && osszesAnyag.length > 0 && osszesAnyag.every(k => k === osszesAnyag[0])) {
         anyagKod = osszesAnyag[0];
