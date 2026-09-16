@@ -2,7 +2,7 @@
 // feszítési terv konverter. Csak ezt a fájlt kell módosítani új logikai
 // finomításnál — az adatlap_teszt.html-hez nem kell hozzányúlni.
 
-  const BUILD_VERZIO = '2026-09-11e -- felsovezetektarto checkbox (alapból bepipálva) a korábbi radio helyett';
+  const BUILD_VERZIO = '2026-09-16 -- megjegyzés frissítve: az OSM-tagek már automatikusan felkerülnek OSM-re is';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -788,7 +788,9 @@
       }
       frissitElonezet();
       // A saját (GitHubra szánt) rekord — az OSM-kompatibilis tagek (a "Generált OSM-tagek"
-      // panelen láthatók) egyelőre külön, kézzel kerülnek fel az OSM-re; ez a gomb a
+      // panelen láthatók) a térkép "Változások feltöltése" gombjával, OSM-bejelentkezés
+      // esetén, a GitHub-mentéssel együtt automatikusan felkerülnek az OSM-re is
+      // (lásd index.html feltoltesIndul() + osm_szerkesztes.js); ez a gomb itt a
       // vonalhoz tartozó sajat_adatok/{kod}.ndjson fájlt frissíti, amit majd a térkép is
       // beolvas.
       const rekord = { ...formazottRekord(), tartoszerkezetek: tartoszerkezetek };

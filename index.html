@@ -100,13 +100,14 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-locatecontrol/0.79.0/L.Control.Locate.min.js"></script>
 <script src="./osm_auth.js"></script>
+<script src="./osm_szerkesztes.js"></script>
 <script src="./github_mentes.js"></script>
 <script src="./cimke_epito.js"></script>
 <script>
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-15 -- mobil OSM-bejelentkezés valójában működik (ideiglenes diag eltávolítva)';
+  const BUILD_VERZIO = '2026-09-16 -- OSM write-back (C pont, v1: additív, ütközésnél kihagyás) bekötve a feltöltésbe';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -1684,6 +1685,14 @@
     const sikeresVonalak = [];
     const sikertelenVonalak = []; // { vonalKod, hiba }
 
+    // OSM write-back (C pont, 2026-09-16): a GitHub-mentés MINDIG megtörténik, ez a rész
+    // csak akkor fut, ha be vagy jelentkezve OSM-mel is -- ha nem, semmi nem változik a
+    // korábbi viselkedéshez képest. Additív: sose ír felül eltérő értékű, már létező
+    // OSM-taget, csak a hiányzókat pótolja; az ütköző tageket kihagyja és jelenti.
+    const osmVanBejelentkezve = typeof osmAuth !== 'undefined' && osmAuth.tokenVan() && typeof osmSzerkesztes !== 'undefined';
+    const osmKihagyottFigyelmeztetesek = []; // "07424 (power, insulator)" formájú szövegek
+    const osmHibaVonalak = []; // { vonalKod, hiba }
+
     for (const [vonalKod, tetelek] of vonalankent) {
       feltoltesBtnEl.title = `Feltöltés (${vonalKod})...`;
       statusEl.textContent = `Változások feltöltése: ${vonalKod} (${tetelek.length} oszlop)...`;
@@ -1705,6 +1714,35 @@
         }
 
         sikeresVonalak.push(vonalKod);
+
+        // A GitHub-mentés (a "biztonságos" állapot) ettől a ponttól már megtörtént és
+        // sikeres volt, akkor is, ha az alábbi OSM-lépés esetleg hibázik -- ezért ez egy
+        // külön try/catch-ben fut, és sosem teszi sikertelenné a fenti GitHub-feltöltést.
+        if (osmVanBejelentkezve) {
+          const osmTetelek = tetelek
+            .filter(({ rekord }) => rekord && rekord.osm_tagek && rekord._osm_id && rekord.lat != null && rekord.lon != null)
+            .map(({ rekord }) => ({ osmId: rekord._osm_id, lat: rekord.lat, lon: rekord.lon, ujTagek: rekord.osm_tagek }));
+          if (osmTetelek.length > 0) {
+            statusEl.textContent = `OSM-re írás: ${vonalKod} (${osmTetelek.length} oszlop)...`;
+            try {
+              const vonalNev = vonal ? vonal.nev : vonalKod;
+              const osmEredmenyek = await osmSzerkesztes.csomagFeltoltese(
+                vonalNev, osmTetelek, `${osmTetelek.length} felsővezeték-oszlop adatainak frissítése (${vonalNev})`
+              );
+              osmEredmenyek.forEach(r => {
+                if (r.kihagyottTagek && r.kihagyottTagek.length > 0) {
+                  osmKihagyottFigyelmeztetesek.push(`${r.osmId} (${r.kihagyottTagek.map(k => k.kulcs).join(', ')})`);
+                }
+                if (r.allapot === 'hiba') {
+                  console.warn('[OSM write-back] Node hiba:', r.osmId, r.hiba);
+                }
+              });
+            } catch (err) {
+              console.warn('[OSM write-back] Sikertelen az OSM-re írás ezen a vonalon:', vonalKod, err);
+              osmHibaVonalak.push({ vonalKod, hiba: err.message });
+            }
+          }
+        }
       } catch (err) {
         console.warn('Kötegelt feltöltés sikertelen:', vonalKod, err);
         sikertelenVonalak.push({ vonalKod, hiba: err.message });
@@ -1719,13 +1757,22 @@
     feltoltesBtnEl.disabled = false;
     feltoltesBtnEl.title = eredetiCim;
 
+    let osmMegjegyzes = '';
+    if (osmKihagyottFigyelmeztetesek.length > 0) {
+      osmMegjegyzes += ` Az OSM-en ütköző (kézzel ellenőrizendő) tagek: ${osmKihagyottFigyelmeztetesek.join('; ')}.`;
+    }
+    if (osmHibaVonalak.length > 0) {
+      osmMegjegyzes += ` Az OSM-re írás sikertelen volt itt (a GitHub-mentés rendben megvolt): ` +
+        osmHibaVonalak.map(o => `${o.vonalKod}: ${o.hiba}`).join('; ') + '.';
+    }
+
     if (sikertelenVonalak.length === 0) {
-      statusEl.textContent = `Változások feltöltve: ${sikeresVonalak.join(', ')}.`;
-      statusEl.style.color = '#2a7d2a';
+      statusEl.textContent = `Változások feltöltve: ${sikeresVonalak.join(', ')}.` + osmMegjegyzes;
+      statusEl.style.color = osmMegjegyzes ? '#b8860b' : '#2a7d2a';
     } else {
       const hibaLista = sikertelenVonalak.map(s => `${s.vonalKod}: ${s.hiba}`).join('; ');
       statusEl.textContent = (sikeresVonalak.length > 0 ? `Feltöltve: ${sikeresVonalak.join(', ')}. ` : '') +
-        `Sikertelen (a mentetlen módosítás megmaradt): ${hibaLista}`;
+        `Sikertelen (a mentetlen módosítás megmaradt): ${hibaLista}` + osmMegjegyzes;
       statusEl.style.color = 'red';
     }
   }

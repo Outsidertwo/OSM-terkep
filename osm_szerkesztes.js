@@ -123,5 +123,78 @@ const osmSzerkesztes = (function () {
     }
   }
 
-  return { changesetMegnyitasa, changesetLezarasa, nodeLekerdezese, nodeFrissitese, nodeFeltoltese };
+  // --- Additív, ütközés-biztos kötegelt feltöltés (C pont, 2026-09-16) ---
+  //
+  // A nodeFeltoltese() fenti, korai változata VAKON összefésül -- ha egy tag már más
+  // értékkel szerepel a node-on, egyszerűen felülírja. Ez a rész ehelyett SOHA nem ír
+  // felül eltérő értékű, már létező taget: csak a hiányzó tageket pótolja. Ha egy tagnál
+  // valódi ütközés van (a node-on más érték van, mint amit mi mentenénk), azt a tagot
+  // kihagyja, és jelenti a hívónak -- kézi, iD/JOSM-es átnézésre. Ez a v1, óvatos
+  // változat; egy későbbi körben ez bővíthető tagenkénti interaktív visszakérdezéssel.
+
+  // Összehasonlítja a node jelenlegi (OSM-en élő) tageit a mentendő (séma szerint ismert)
+  // tagekkel. Visszaadja: alkalmazandoTagek (a jelenlegi tagek + a ténylegesen hiányzó,
+  // újonnan pótolható tagek -- ez küldendő vissza a node-nak), és kihagyottTagek (azok a
+  // kulcsok, ahol a node-on már más érték szerepel, mint amit mi mentenénk -- ezekhez
+  // NEM nyúlunk).
+  function tagekOsszehasonlitasa(jelenlegiTagek, ujTagek) {
+    const alkalmazandoTagek = { ...jelenlegiTagek };
+    const kihagyottTagek = [];
+    let vanValodiValtozas = false;
+    Object.entries(ujTagek).forEach(([kulcs, ertek]) => {
+      if (ertek === undefined || ertek === null || ertek === '') return;
+      const ertekSzoveg = String(ertek);
+      if (!(kulcs in jelenlegiTagek)) {
+        alkalmazandoTagek[kulcs] = ertekSzoveg;
+        vanValodiValtozas = true;
+      } else if (jelenlegiTagek[kulcs] !== ertekSzoveg) {
+        kihagyottTagek.push({ kulcs, regiErtek: jelenlegiTagek[kulcs], ujErtek: ertekSzoveg });
+      }
+      // Ha a kulcs már megvan, ugyanazzal az értékkel -- nincs teendő, marad ahogy van.
+    });
+    return { alkalmazandoTagek, kihagyottTagek, vanValodiValtozas };
+  }
+
+  // Egy egész vonalhoz tartozó köteg feltöltése EGYETLEN changeset-ben.
+  // tetelek: [{ osmId, lat, lon, ujTagek }, ...] -- a lat/lon csak tartalékként kell,
+  // ha az OSM-en lekérdezett koordinátát bármi okból nem használnánk (jelenleg mindig a
+  // frissen lekérdezett OSM-koordinátát küldjük vissza, hogy soha ne mozdítsuk el
+  // véletlenül a node-ot).
+  // Egy-egy node hibája nem szakítja meg a többi feldolgozását (best effort); a
+  // changeset a végén, akkor is lezáródik, ha közben volt hiba.
+  // Visszaadja tételenként az eredményt:
+  //   { osmId, allapot: 'sikeres' | 'nincs_valtozas' | 'hiba', ujVerzio?, kihagyottTagek, hiba? }
+  async function csomagFeltoltese(vonalNev, tetelek, megjegyzes) {
+    if (!tetelek || tetelek.length === 0) return [];
+    const changesetId = await changesetMegnyitasa(megjegyzes || `${tetelek.length} felsővezeték-oszlop adatainak frissítése (${vonalNev})`);
+    const eredmenyek = [];
+    try {
+      for (const tetel of tetelek) {
+        try {
+          const jelenlegi = await nodeLekerdezese(tetel.osmId);
+          const { alkalmazandoTagek, kihagyottTagek, vanValodiValtozas } =
+            tagekOsszehasonlitasa(jelenlegi.tagek, tetel.ujTagek || {});
+          if (!vanValodiValtozas) {
+            eredmenyek.push({ osmId: tetel.osmId, allapot: 'nincs_valtozas', kihagyottTagek });
+            continue;
+          }
+          const ujVerzio = await nodeFrissitese(
+            tetel.osmId, changesetId, jelenlegi.verzio, jelenlegi.lat, jelenlegi.lon, alkalmazandoTagek
+          );
+          eredmenyek.push({ osmId: tetel.osmId, allapot: 'sikeres', ujVerzio, kihagyottTagek });
+        } catch (err) {
+          eredmenyek.push({ osmId: tetel.osmId, allapot: 'hiba', hiba: err.message, kihagyottTagek: [] });
+        }
+      }
+    } finally {
+      // A changesetet mindenképp lezárjuk, akkor is, ha közben egyes node-oknál hiba volt.
+      try { await changesetLezarasa(changesetId); } catch (zarasHiba) { /* nincs mit tenni */ }
+    }
+    return eredmenyek;
+  }
+
+  return {
+    changesetMegnyitasa, changesetLezarasa, nodeLekerdezese, nodeFrissitese, nodeFeltoltese,
+    tagekOsszehasonlitasa, csomagFeltoltese
+  };
 })();
