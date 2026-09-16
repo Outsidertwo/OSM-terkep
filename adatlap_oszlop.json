@@ -272,21 +272,24 @@
           "kod": "F",
           "nev": "Feszítő (F)",
           "osm": {
-            "structure": "lattice"
+            "structure": "lattice",
+            "material": "steel"
           }
         },
         {
           "kod": "K",
           "nev": "Keresztmező (K)",
           "osm": {
-            "structure": "lattice"
+            "structure": "lattice",
+            "material": "steel"
           }
         },
         {
           "kod": "KR",
           "nev": "Keretállás (KR)",
           "osm": {
-            "structure": "lattice"
+            "structure": "lattice",
+            "material": "steel"
           }
         },
         {
@@ -325,7 +328,8 @@
           "kod": "FA",
           "nev": "Fa oszlop (F)",
           "osm": {
-            "structure": "trunk"
+            "structure": "trunk",
+            "material": "wood"
           },
           "megjegyzes": "Az F betű közvetlenül az oszlopszám mögé kerül, szóköz nélkül (pl. 07424F). A fa oszlopnak nincs más funkciója/jelölése, és nem kombinálódik a Tőcsavaros kivitellel."
         }
