@@ -134,10 +134,13 @@ const osmSzerkesztes = (function () {
 
   // Összehasonlítja a node jelenlegi (OSM-en élő) tageit a mentendő (séma szerint ismert)
   // tagekkel. Visszaadja: alkalmazandoTagek (a jelenlegi tagek + a ténylegesen hiányzó,
-  // újonnan pótolható tagek -- ez küldendő vissza a node-nak), és kihagyottTagek (azok a
-  // kulcsok, ahol a node-on már más érték szerepel, mint amit mi mentenénk -- ezekhez
-  // NEM nyúlunk).
-  function tagekOsszehasonlitasa(jelenlegiTagek, ujTagek) {
+  // újonnan pótolható tagek -- ez küldendő vissza a node-nak), kihagyottTagek (azok a
+  // kulcsok, ahol a node-on már más érték szerepel, mint amit mi mentenénk -- ezekhez NEM
+  // nyúlunk jóváhagyás nélkül), és torlendoTagek (azok a KEZELT kulcsok, amik a node-on
+  // megvannak, de a mentendő tagek között már nincsenek -- vagyis a felmérésből törölték
+  // az adott mezőt -- ezekhez sem nyúlunk jóváhagyás nélkül). kezeltKulcsok nélkül (pl.
+  // ha a séma nem tölthető be) a torlés-felismerés kimarad, csak additív mukodés marad.
+  function tagekOsszehasonlitasa(jelenlegiTagek, ujTagek, kezeltKulcsok) {
     const alkalmazandoTagek = { ...jelenlegiTagek };
     const kihagyottTagek = [];
     let vanValodiValtozas = false;
@@ -152,26 +155,38 @@ const osmSzerkesztes = (function () {
       }
       // Ha a kulcs már megvan, ugyanazzal az értékkel -- nincs teendő, marad ahogy van.
     });
-    return { alkalmazandoTagek, kihagyottTagek, vanValodiValtozas };
+    const torlendoTagek = [];
+    if (kezeltKulcsok) {
+      Object.keys(jelenlegiTagek).forEach(kulcs => {
+        if (kezeltKulcsok.has(kulcs) && !(kulcs in ujTagek)) {
+          torlendoTagek.push({ kulcs, regiErtek: jelenlegiTagek[kulcs] });
+        }
+      });
+    }
+    return { alkalmazandoTagek, kihagyottTagek, torlendoTagek, vanValodiValtozas };
   }
 
   // Egy egész vonalhoz tartozó köteg feltöltése EGYETLEN changeset-ben, KÉT FÁZISBAN:
-  //  1) száraz futás -- minden node lekérdezése, a különbségek összegyűjtése, MÉG SEMMI
-  //     nem íródik OSM-re;
-  //  2) ha volt ütköző tag (OSM-en már más érték van rajta, mint amit mentenénk), EGYETLEN
-  //     összesített, egyszerű kérdéssel (window.confirm) eldöntjük: a sajátunkkal írjuk-e
-  //     felül mindet, vagy egyiket sem (ekkor a régi, óvatos viselkedés marad: csak a
-  //     hiányzó tagek pótlódnak). Ez egy globális döntés, nem soronkénti -- ha a
-  //     gyakorlatban ez kevésnek bizonyul, később bővíthető (2026-09-16, kérésre: egyelőre
-  //     az egyszerűbb megoldás elég).
+  //  1) száraz futás -- minden node lekérdezése, a különbségek (frissítendő + törlendő
+  //     tagek) összegyűjtése, MÉG SEMMI nem íródik OSM-re;
+  //  2) ha volt ütköző VAGY törlendő tag, EGYETLEN összesített, egyszerű kérdéssel
+  //     (window.confirm) eldöntjük: mindet végrehajtjuk-e (felülírás + törlés is), vagy
+  //     egyiket sem (ekkor a régi, óvatos viselkedés marad: csak a hiányzó tagek
+  //     pótlódnak). Ez egy globális döntés, nem soronkénti -- ha a gyakorlatban ez
+  //     kevésnek bizonyul, később bővíthető (2026-09-16/17, kérésre: egyelőre az
+  //     egyszerűbb, egy közös jóváhagyás elég).
   // tetelek: [{ osmId, lat, lon, ujTagek }, ...] -- a lat/lon csak tartalékként kell, az
   // OSM-re mindig a frissen lekérdezett OSM-koordináta megy vissza, hogy a node soha ne
   // mozduljon el véletlenül.
+  // kezeltKulcsok: Set<string> -- azok az OSM-kulcsok, amiket a séma valaha beírhat; ha a
+  // node-on egy ilyen kulcs megvan, de a mentendő tagek között már nincs, törlésre
+  // jelöljük (más, nem-kezelt/idegen tagekhez soha nem nyúlunk). Elhagyható -- akkor a
+  // törlés-felismerés kimarad, csak additív működés marad.
   // Egy-egy node hibája nem szakítja meg a többi feldolgozását (best effort); a changeset
   // a végén, akkor is lezáródik, ha közben volt hiba.
   // Visszaadja tételenként az eredményt:
-  //   { osmId, allapot: 'sikeres' | 'nincs_valtozas' | 'hiba', ujVerzio?, kihagyottTagek, hiba? }
-  async function csomagFeltoltese(vonalNev, tetelek, megjegyzes) {
+  //   { osmId, allapot: 'sikeres' | 'nincs_valtozas' | 'hiba', ujVerzio?, kihagyottTagek, torolt?, hiba? }
+  async function csomagFeltoltese(vonalNev, tetelek, megjegyzes, kezeltKulcsok) {
     if (!tetelek || tetelek.length === 0) return [];
 
     // --- 1. fázis: száraz futás ---
@@ -179,25 +194,27 @@ const osmSzerkesztes = (function () {
     for (const tetel of tetelek) {
       try {
         const jelenlegi = await nodeLekerdezese(tetel.osmId);
-        const { alkalmazandoTagek, kihagyottTagek, vanValodiValtozas } =
-          tagekOsszehasonlitasa(jelenlegi.tagek, tetel.ujTagek || {});
-        szarazFutas.push({ osmId: tetel.osmId, jelenlegi, alkalmazandoTagek, kihagyottTagek, vanValodiValtozas });
+        const { alkalmazandoTagek, kihagyottTagek, torlendoTagek, vanValodiValtozas } =
+          tagekOsszehasonlitasa(jelenlegi.tagek, tetel.ujTagek || {}, kezeltKulcsok);
+        szarazFutas.push({ osmId: tetel.osmId, jelenlegi, alkalmazandoTagek, kihagyottTagek, torlendoTagek, vanValodiValtozas });
       } catch (err) {
         szarazFutas.push({ osmId: tetel.osmId, hiba: err.message });
       }
     }
 
-    // --- Egyetlen összesített visszakérdezés, ha volt ütközés ---
+    // --- Egyetlen összesített visszakérdezés, ha volt ütközés vagy törlendő tag ---
     const osszesUtkozes = szarazFutas.flatMap(d => (d.kihagyottTagek || []).map(k => ({ osmId: d.osmId, ...k })));
-    let felulirVallalt = false;
-    if (osszesUtkozes.length > 0) {
-      const szoveg = osszesUtkozes
-        .map(u => `#${u.osmId}: ${u.kulcs}  (OSM-en: "${u.regiErtek}"  →  nálad: "${u.ujErtek}")`)
-        .join('\n');
-      felulirVallalt = window.confirm(
-        `${osszesUtkozes.length} ütköző tag található -- ezeknél az OSM-en már más érték szerepel, mint amit menteni szeretnél:\n\n` +
-        `${szoveg}\n\n` +
-        `OK = mindet felülírom a saját értékemmel.\nMégse = egyiket sem írom felül, csak a hiányzó tagek pótlódnak.`
+    const osszesTorles = szarazFutas.flatMap(d => (d.torlendoTagek || []).map(k => ({ osmId: d.osmId, ...k })));
+    let vegrehajtasVallalt = false;
+    if (osszesUtkozes.length > 0 || osszesTorles.length > 0) {
+      const sorok = [
+        ...osszesUtkozes.map(u => `FRISSÍTÉS #${u.osmId}: ${u.kulcs}  (OSM-en: "${u.regiErtek}"  →  nálad: "${u.ujErtek}")`),
+        ...osszesTorles.map(u => `TÖRLÉS #${u.osmId}: ${u.kulcs}  (jelenlegi OSM-érték: "${u.regiErtek}", nálad már nincs megadva)`)
+      ];
+      vegrehajtasVallalt = window.confirm(
+        `${sorok.length} tag igényel jóváhagyást -- ezeknél az OSM-en más adat szerepel, mint amit menteni szeretnél, vagy egy korábbi tag már nincs nálad megadva:\n\n` +
+        sorok.join('\n') + '\n\n' +
+        `OK = mindet végrehajtom (felülírás + törlés is).\nMégse = egyiket sem, csak a hiányzó tagek pótlódnak.`
       );
     }
 
@@ -212,12 +229,21 @@ const osmSzerkesztes = (function () {
         }
         let vegsoTagek = d.alkalmazandoTagek;
         let vegsoKihagyott = d.kihagyottTagek;
+        let vegsoTorolt = [];
         let vanIras = d.vanValodiValtozas;
-        if (felulirVallalt && d.kihagyottTagek.length > 0) {
-          vegsoTagek = { ...d.alkalmazandoTagek };
-          d.kihagyottTagek.forEach(k => { vegsoTagek[k.kulcs] = k.ujErtek; });
-          vegsoKihagyott = [];
-          vanIras = true;
+        if (vegrehajtasVallalt) {
+          if (d.kihagyottTagek.length > 0) {
+            vegsoTagek = { ...vegsoTagek };
+            d.kihagyottTagek.forEach(k => { vegsoTagek[k.kulcs] = k.ujErtek; });
+            vegsoKihagyott = [];
+            vanIras = true;
+          }
+          if (d.torlendoTagek.length > 0) {
+            vegsoTagek = { ...vegsoTagek };
+            d.torlendoTagek.forEach(k => { delete vegsoTagek[k.kulcs]; });
+            vegsoTorolt = d.torlendoTagek;
+            vanIras = true;
+          }
         }
         if (!vanIras) {
           eredmenyek.push({ osmId: d.osmId, allapot: 'nincs_valtozas', kihagyottTagek: vegsoKihagyott });
@@ -227,7 +253,7 @@ const osmSzerkesztes = (function () {
           const ujVerzio = await nodeFrissitese(
             d.osmId, changesetId, d.jelenlegi.verzio, d.jelenlegi.lat, d.jelenlegi.lon, vegsoTagek
           );
-          eredmenyek.push({ osmId: d.osmId, allapot: 'sikeres', ujVerzio, kihagyottTagek: vegsoKihagyott });
+          eredmenyek.push({ osmId: d.osmId, allapot: 'sikeres', ujVerzio, kihagyottTagek: vegsoKihagyott, torolt: vegsoTorolt });
         } catch (err) {
           eredmenyek.push({ osmId: d.osmId, allapot: 'hiba', hiba: err.message, kihagyottTagek: vegsoKihagyott });
         }

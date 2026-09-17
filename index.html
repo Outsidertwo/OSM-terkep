@@ -107,7 +107,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-16d -- popup-fordítások/rejtett mezők konfiguracio.json-ból';
+  const BUILD_VERZIO = '2026-09-17 -- OSM write-back: sémából törölt mezők törlés-jóváhagyással is eljutnak OSM-re';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -522,8 +522,32 @@
       if (m.gyerek_mezok) gyujtsMezoNeveket(m.gyerek_mezok);
     });
   }
-  fetch('./adatlap_oszlop.json').then(r => r.json()).then(sema => gyujtsMezoNeveket(sema.mezok))
-    .catch(err => console.warn('adatlap_oszlop.json nem tölthető be a popup-feliratokhoz:', err));
+
+  // Az OSM write-back "kezelt kulcsok" listája: minden OSM-tag, amit a séma valaha
+  // beírhat (lásd osszegyujtOsmTageket() az adatlap_motor.js-ben). Ez azért kell, hogy a
+  // write-back fel tudja ismerni, ha egy korábban beírt tagot a felmérésből törölnek --
+  // olyankor a node-on lévő, de nálunk már nem szereplő KEZELT kulcsot törlésre lehet
+  // jelölni (más, nem sémabeli, idegen tagekhez soha nem nyúlunk). A power mindig kezelt,
+  // mert az mindig fixen kódolva kerül be (lásd fent). A gyűjtés tetszőleges mélységben,
+  // bármilyen mezőtípuson (checkbox/radio/select/tartoszerkezet-opció stb.) megtalálja az
+  // "osm" mappingeket -- így ha a séma bővül egy új mezővel, a lista automatikusan bővül,
+  // nincs vele semmi teendő (2026-09-17, kérésre).
+  const OSM_KEZELT_KULCSOK = new Set(['power']);
+  function osmKezeltKulcsokGyujtese(csomopont) {
+    if (Array.isArray(csomopont)) {
+      csomopont.forEach(osmKezeltKulcsokGyujtese);
+    } else if (csomopont && typeof csomopont === 'object') {
+      if (csomopont.osm && typeof csomopont.osm === 'object') {
+        Object.keys(csomopont.osm).forEach(k => OSM_KEZELT_KULCSOK.add(k));
+      }
+      Object.values(csomopont).forEach(osmKezeltKulcsokGyujtese);
+    }
+  }
+
+  fetch('./adatlap_oszlop.json').then(r => r.json()).then(sema => {
+    gyujtsMezoNeveket(sema.mezok);
+    osmKezeltKulcsokGyujtese(sema);
+  }).catch(err => console.warn('adatlap_oszlop.json nem tölthető be a popup-feliratokhoz/OSM write-backhez:', err));
 
   // A sajat_adatok/{kod}.ndjson fájlok együttes tartalma _osm_id kulccsal — ez az elsődleges
   // forrás: offline/Overpass nélkül is ebből rajzolunk, az Overpass-eredmény pedig csak
@@ -1696,7 +1720,7 @@
             try {
               const vonalNev = vonal ? vonal.nev : vonalKod;
               const osmEredmenyek = await osmSzerkesztes.csomagFeltoltese(
-                vonalNev, osmTetelek, `${osmTetelek.length} felsővezeték-oszlop adatainak frissítése (${vonalNev})`
+                vonalNev, osmTetelek, `${osmTetelek.length} felsővezeték-oszlop adatainak frissítése (${vonalNev})`, OSM_KEZELT_KULCSOK
               );
               osmEredmenyek.forEach(r => {
                 if (r.kihagyottTagek && r.kihagyottTagek.length > 0) {
