@@ -107,7 +107,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-16b -- GPS mindig követ, szerkesztés után visszaugrás az oszlopra';
+  const BUILD_VERZIO = '2026-09-16c -- fitBounds csak induló betöltéskor (nem minden újrarajzolásnál)';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -498,6 +498,10 @@
   // hálózati kérés nélkül. Minden elem properties._vonal mezője jelzi, melyik vonalhoz
   // tartozik (átfedő vonalaknál egy elem csak az őt ténylegesen tartalmazó vonalhoz tartozik).
   let osszesFeature = [];
+  // Csak az induló betöltéskor illesztjük a nézetet az összes adatra (fitBounds) -- utána,
+  // bármi váltja is ki az újrarajzolást (szűrés, feltöltés, bejelentkezés stb.), a
+  // felhasználó által beállított nézet érintetlen marad (2026-09-16, kérésre).
+  let elsoRajzolasMegtortent = false;
   const letoltottVonalak = new Set();
 
   // A saját felmérési séma (adatlap_oszlop.json) mező-kód -> magyar név párosítását
@@ -919,7 +923,7 @@
       }
       const kodolt = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(payload)))));
       gombok = `<div style="margin-top:8px; display:flex; gap:6px;">
-        <button onclick="szerkesztesIndul('${kodolt}', ${lat}, ${lon})"
+        <button onclick="window.open('adatlap.html?adat=${kodolt}', '_blank')"
                 style="font-size:13px; padding:4px 10px; border:1px solid #ccc; border-radius:4px; background:#f0f0f0; cursor:pointer;">
           Szerkesztés
         </button>
@@ -927,33 +931,6 @@
     }
 
     return `${osmIdSor}<table class="popup-table">${rows}</table>${sajatSor}${gombok}`;
-  }
-
-  // A "Szerkesztés" gomb ezt hívja meg közvetlenül a window.open() helyett: előtte elmenti
-  // a szerkesztett oszlop pozícióját, hogy oldalbetöltéskor (lásd
-  // utolsoSzerkesztettOszlopMegjelenitese()) a térkép automatikusan visszatérhessen rá --
-  // mobilon ugyanis a szerkesztő új fülként/ablakként nyílik, de ha a böngésző emiatt a
-  // háttérben újratölti a főoldalt, addig az alapértelmezett, kizoomolt nézetre esne vissza.
-  function szerkesztesIndul(kodolt, lat, lon) {
-    try {
-      localStorage.setItem('utolsoSzerkesztettOszlop', JSON.stringify({ lat, lon, ts: Date.now() }));
-    } catch (err) { /* localStorage hiba esetén sem szakítjuk meg a szerkesztést */ }
-    window.open('adatlap.html?adat=' + kodolt, '_blank');
-  }
-
-  // Oldalbetöltéskor ellenőrzi, van-e nemrég (max 15 percen belül) elmentett "utoljára
-  // szerkesztett oszlop" pozíció -- ha van, a térkép arra ugrik, majd a bejegyzés törlődik,
-  // hogy egy szokásos, később történő belépésnél ne zavarjon be.
-  function utolsoSzerkesztettOszlopMegjelenitese() {
-    try {
-      const nyers = localStorage.getItem('utolsoSzerkesztettOszlop');
-      if (!nyers) return;
-      localStorage.removeItem('utolsoSzerkesztettOszlop');
-      const adat = JSON.parse(nyers);
-      if (!adat || typeof adat.lat !== 'number' || typeof adat.lon !== 'number') return;
-      if (Date.now() - adat.ts > 15 * 60 * 1000) return;
-      map.setView([adat.lat, adat.lon], 18);
-    } catch (err) { /* nincs mit tenni, marad az alapértelmezett nézet */ }
   }
 
   function classify(tags) {
@@ -1121,9 +1098,10 @@
     }
 
     const allLayers = TYPES.map(t => clusterGroups[t.key]).filter(g => g.getLayers().length > 0);
-    if (allLayers.length > 0) {
+    if (allLayers.length > 0 && !elsoRajzolasMegtortent) {
       const group = L.featureGroup(allLayers.flatMap(g => g.getLayers()));
       map.fitBounds(group.getBounds().pad(0.1));
+      elsoRajzolasMegtortent = true;
     }
   }
 
@@ -1837,7 +1815,6 @@
     }
     await toldasokBetoltese();
     toldasSzamlaloFrissites();
-    utolsoSzerkesztettOszlopMegjelenitese();
     console.log('[DIAG] inditas() befejeződött');
   }
   inditas();
