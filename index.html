@@ -107,7 +107,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-16c -- fitBounds csak induló betöltéskor (nem minden újrarajzolásnál)';
+  const BUILD_VERZIO = '2026-09-16d -- popup-fordítások/rejtett mezők konfiguracio.json-ból';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -620,83 +620,45 @@
   // Egyelőre rejtve: railway=switch / signal / station / halt / stop / junction / radio stb.
 
   // ============================================================
-  // MAGYAR FORDÍTÁSI SZÓTÁR
-  // (Ez a blokk is a későbbi konfiguracio.json-ba kerül majd ki.)
-  // Cél: a popup ablak és az adatlap magyarul jelenjen meg,
-  // a mögöttes OSM-tagek angol nevei/értékei változatlanok maradnak.
+  // MEGJELENÍTÉSI KONFIGURÁCIÓ (konfiguracio.json)
+  // A négy alábbi változó tartalmát induláskor tölti be a
+  // megjelenitesiKonfigBetoltese() (lásd inditas()) -- itt csak az alapértelmezett,
+  // üres értékek vannak, hogy a fájl korai (hálózati kérés előtti) hivatkozása se
+  // dobjon hibát. Cél: a popup ablak és az adatlap magyarul jelenjen meg, a mögöttes
+  // OSM-tagek angol nevei/értékei változatlanok maradnak.
   // ============================================================
+
   // Az Overpass Turbo GeoJSON-exportja ezeket a kozmetikai (nem valódi OSM-tag) mezőket
   // is hozzáadja a stílus alapján — ezek a popupban csak zajt jelentenének, kiszűrjük.
-  const REJTETT_MEZOK = new Set([
-    'icon', 'icon-color', 'icon-opacity', 'icon-scale', 'icon-offset',
-    'icon-offset-units', 'label-scale', 'styleUrl',
-    'operator', 'operator:wikidata', 'power'
-  ]);
+  let REJTETT_MEZOK = new Set();
 
   // Az oszlop (catenary_mast) popupban ezek a raw OSM-tagek duplikálják a lenti,
   // a _sajat rekordból épített, emberi olvasásra szánt mezőket -- csak az oszlop
   // popupban rejtjük el őket, más objektumtípusoknál (pl. szelvénykő) ugyanezek
   // a kulcsok simán maradnak, ha egyáltalán előfordulnak.
-  const OSZLOP_DUPLIKALT_RAW_TAGEK = new Set([
-    'actuator', 'catenary_mast:supporting', 'guyed', 'location',
-    'manufacturer', 'model', 'ref', 'ref:switch', 'structure', 'switch', 'tensioning'
-  ]);
+  let OSZLOP_DUPLIKALT_RAW_TAGEK = new Set();
 
-  const MEZO_FORDITAS = {
-    railway: 'Típus (railway)',
-    power: 'Típus (power)',
-    operator: 'Üzemeltető',
-    'operator:wikidata': 'Üzemeltető (Wikidata)',
-    name: 'Név/szám (name)',
-    'name:ru': 'Név (oroszul)',
-    ref: 'Azonosító (ref)',
-    'ref:mav': 'MÁV-azonosító',
-    'ref:MAV': 'MÁV-azonosító',
-    'railway:ref': 'Vasúti azonosító',
-    local_ref: 'Helyi azonosító',
-    maxheight: 'Legnagyobb magasság',
-    'railway:position': 'Szelvényezési hely (km)',
-    'railway:position:exact': 'Pontos szelvényezési hely',
-    crossing: 'Átjáró védettsége',
-    'crossing:barrier': 'Sorompó',
-    'crossing:light': 'Fényjelzés',
-    'crossing:bell': 'Hangjelzés',
-    supervised: 'Felügyelt',
-    informal: 'Nem hivatalos',
-    material: 'Anyag',
-    structure: 'Szerkezet',
-    voltage: 'Feszültség',
-    location: 'Elhelyezkedés',
-    direction: 'Irány',
-    switch: 'Szakaszoló',
-    'communication:gsm-r': 'GSM-R',
-    description: 'Leírás',
-    source: 'Forrás',
-    website: 'Weboldal',
-    wikidata: 'Wikidata',
-    wikipedia: 'Wikipédia',
-    wikimedia_commons: 'Wikimedia Commons',
-    wheelchair: 'Kerekesszékkel',
-    public_transport: 'Közösségi közlekedés',
-    train: 'Vonat megáll',
-    uic_ref: 'UIC-azonosító',
-    man_made: 'Mesterséges létesítmény',
-    line_attachment: 'Vezeték-rögzítés',
-    information: 'Információ',
-    tourism: 'Turizmus',
-    'addr:city': 'Település',
-    'addr:street': 'Utca',
-    'addr:housenumber': 'Házszám',
-    'addr:postcode': 'Irányítószám',
-    '@id': 'OSM azonosító'
-  };
+  let MEZO_FORDITAS = {};
 
-  const ERTEK_FORDITAS = {
-    railway: { milestone: 'Szelvénykő', level_crossing: 'Útátjáró', switch: 'Kitérő', signal: 'Jelző', station: 'Állomás', halt: 'Megállóhely', stop: 'Megálló', junction: 'Csomópont' },
-    power: { catenary_mast: 'Felsővezeték-oszlop' },
-    crossing: { uncontrolled: 'Jelzés nélküli', traffic_signals: 'Fénysorompós', no_signals: 'Jelzés nélküli' },
-    'crossing:barrier': { full: 'Teljes sorompó', half: 'Fél sorompó', no: 'Nincs sorompó' }
-  };
+  let ERTEK_FORDITAS = {};
+
+  // Induláskor (inditas() legelső lépéseként) tölti be a fenti négy változót a
+  // konfiguracio.json-ból -- ha a betöltés bármiért meghiúsul, üresen maradnak (a
+  // popup ekkor a nyers OSM-kulcsokat/értékeket mutatja fordítás helyett, de az
+  // alkalmazás egyébként működőképes marad).
+  async function megjelenitesiKonfigBetoltese() {
+    try {
+      const res = await fetch('./konfiguracio.json');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const konfig = await res.json();
+      REJTETT_MEZOK = new Set(konfig.rejtett_mezok || []);
+      OSZLOP_DUPLIKALT_RAW_TAGEK = new Set(konfig.oszlop_duplikalt_raw_tagek || []);
+      MEZO_FORDITAS = konfig.mezo_forditasok || {};
+      ERTEK_FORDITAS = konfig.ertek_forditasok || {};
+    } catch (err) {
+      console.warn('konfiguracio.json nem tölthető be, a popup a nyers OSM-kulcsokkal jelenik meg:', err);
+    }
+  }
 
   function magyarMezonev(kulcs) {
     return MEZO_FORDITAS[kulcs] || kulcs;
@@ -1792,6 +1754,7 @@
   // alapértelmezett VONALAK-kal folytatjuk, csak jelezzük a státuszsávban.
   async function inditas() {
     console.log('[DIAG] inditas() elindult');
+    await megjelenitesiKonfigBetoltese();
     try {
       const res = await fetch('./vonalak.json');
       if (!res.ok) throw new Error('HTTP ' + res.status);
