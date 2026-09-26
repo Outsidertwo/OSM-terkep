@@ -107,12 +107,11 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-17 -- OSM write-back: sémából törölt mezők törlés-jóváhagyással is eljutnak OSM-re';
+  const BUILD_VERZIO = '2026-09-26 -- [DIAG] naplózás eltávolítva (nagytakarítás)';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
   });
-  console.log('[DIAG] BUILD_VERZIO =', BUILD_VERZIO);
 
   const map = L.map('map').setView([47.35, 19.85], 10);
 
@@ -1005,8 +1004,6 @@
     // DIAGNOSZTIKA: ha a popup bezárul, kiírjuk a hívási láncot (stack trace) is --
     // ebből látszik, mi zárta be (natív X gomb, vagy pl. egy loadGeoJSON-újrarajzolás).
     marker.on('popupclose', () => {
-      console.log('[DIAG] popupclose', tags.ref || tags.name || '(?)');
-      console.trace('[DIAG] popupclose stack');
     });
     const labelHtml = type.buildLabelHtml(tags);
     if (labelHtml) {
@@ -1026,8 +1023,6 @@
     // popupja (pl. szerkesztés/mozgatás közben), az a nyitott popup markerét is
     // eltünteti, ami a popup bezáródásaként jelentkezik. A stack trace megmutatja,
     // MELYIK kód hívta meg (pl. inditas / betoltesIndul / vonal-checkbox váltás).
-    console.log('[DIAG] loadGeoJSON fut -- feature-ök száma:', geojson.features.length);
-    console.trace('[DIAG] loadGeoJSON hívási lánc');
 
     // A nyitott popup megőrzése újrarajzoláson át: mielőtt törölnénk a régi markereket,
     // megjegyezzük, van-e köztük épp nyitott popupú, és melyik az az elem (sajatAzonosito).
@@ -1206,12 +1201,10 @@
     const kod = vonalKodja(vonal);
     if (betoltottSajatVonalak.has(kod)) return;
     betoltottSajatVonalak.add(kod);
-    console.log('[DIAG] vonalSajatAdatBetoltese indul:', kod);
     const cachelt = ndjsonCacheOlvasas(kod);
 
     if (cachelt) {
       ndjsonSzovegFeldolgozasa(cachelt);
-      console.log('[DIAG] vonalSajatAdatBetoltese: helyi cache-ből betöltve:', kod);
       vonalSajatAdatHatterFrissites(vonal); // nem várjuk meg -- csendben fut, ha van net
       return;
     }
@@ -1225,7 +1218,6 @@
       const szoveg = await res.text();
       ndjsonSzovegFeldolgozasa(szoveg);
       ndjsonCacheIrasa(kod, szoveg);
-      console.log('[DIAG] vonalSajatAdatBetoltese: hálózatról betöltve és cache-elve:', kod);
     } catch (err) {
       console.warn(`sajat_adatok/${kod}.ndjson betöltése sikertelen (és nincs helyi cache sem):`, err);
     }
@@ -1241,10 +1233,8 @@
       if (!res.ok) return;
       const szoveg = await res.text();
       if (szoveg === ndjsonCacheOlvasas(kod)) {
-        console.log('[DIAG] háttér-frissítés (%s): nincs változás', kod);
         return;
       }
-      console.log('[DIAG] háttér-frissítés (%s): változás észlelve, frissítés', kod);
       ndjsonSzovegFeldolgozasa(szoveg);
       ndjsonCacheIrasa(kod, szoveg);
       osszesFeature = featureekOsszefesulese(osszesFeature, sajatAdatokFeatureKent());
@@ -1252,16 +1242,13 @@
       statusEl.textContent = `Frissült a(z) ${vonal.nev} mentett adata -- háttérben szinkronizálva.`;
       statusEl.style.color = '#2a7d2a';
     } catch (err) {
-      console.log(`[DIAG] háttér-frissítés kihagyva (${kod}, nincs hálózat vagy hiba):`, err.message);
     }
   }
 
   // A közös, GitHub-on tárolt kiegészítő adatfájlok betöltése -- az összes jelenleg
   // aktív (megjelenített) vonalra, párhuzamosan.
   async function sajatAdatokBetoltese() {
-    console.log('[DIAG] sajatAdatokBetoltese indul');
     await Promise.all(VONALAK.filter(v => v.aktiv).map(v => vonalSajatAdatBetoltese(v)));
-    console.log('[DIAG] sajatAdatokBetoltese kész, rekordok száma összesen:', sajatAdatokTerkep.size);
   }
 
   // A sajatAdatokTerkep tartalmából épít geojson feature-öket (csak azokból a rekordokból,
@@ -1400,7 +1387,6 @@
   // frissítés/mentés láthatatlan maradna a térképen. Az id nélküli elemek (nem várt eset,
   // de biztonsági háló) egyszerűen egymás mellé kerülnek.
   function featureekOsszefesulese(regiLista, ujLista) {
-    console.log('[DIAG] featureekOsszefesulese: régi=', regiLista.length, 'új=', ujLista.length);
     const idNelkuliek = regiLista.filter(f => !f.properties._osm_id);
     const map = new Map();
     regiLista.forEach(f => { if (f.properties._osm_id) map.set(String(f.properties._osm_id), f); });
@@ -1414,8 +1400,6 @@
       else idNelkuliek.push(f);
     });
     const eredmeny = [...idNelkuliek, ...Array.from(map.values())];
-    console.log('[DIAG] featureekOsszefesulese kész: eredmény=', eredmeny.length,
-      '(id nélküli=', idNelkuliek.length, ', egyedi id=', map.size, ')');
     return eredmeny;
   }
 
@@ -1429,7 +1413,6 @@
   // A ténylegesen megjelenő adatot az aktív vonalak alapján, hálózati kérés nélkül állítja
   // elő az osszesFeature-ből — ezt hívja a checkbox-pipálás is.
   function alkalmazSzurokEsRajzol() {
-    console.log('[DIAG] alkalmazSzurokEsRajzol meghívva, osszesFeature.length=', osszesFeature.length);
     pendingSzamlaloFrissites();
     const aktivNevek = new Set(VONALAK.filter(v => v.aktiv).map(v => v.nev));
     // Ha egy elemen nincs _vonal jelölés (pl. régebbi, a vonalankénti lekérés előtti mentésből
@@ -1439,7 +1422,6 @@
   }
 
   async function betoltesIndul() {
-    console.log('[DIAG] betoltesIndul meghívva');
     const letoltendok = VONALAK.filter(v => v.aktiv && !letoltottVonalak.has(v.nev));
     if (letoltendok.length === 0) {
       alkalmazSzurokEsRajzol();
@@ -1777,7 +1759,6 @@
   // Ha a fájl nem érhető el (pl. hiányzik, vagy hibás JSON), a beépített
   // alapértelmezett VONALAK-kal folytatjuk, csak jelezzük a státuszsávban.
   async function inditas() {
-    console.log('[DIAG] inditas() elindult');
     await megjelenitesiKonfigBetoltese();
     try {
       const res = await fetch('./vonalak.json');
@@ -1802,7 +1783,6 @@
     }
     await toldasokBetoltese();
     toldasSzamlaloFrissites();
-    console.log('[DIAG] inditas() befejeződött');
   }
   inditas();
 
