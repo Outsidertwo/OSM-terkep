@@ -35,6 +35,7 @@
   .popup-table { font-size: 15px; border-collapse: collapse; }
   .popup-table td { padding: 3px 8px 3px 0; vertical-align: top; }
   .popup-table td:first-child { color: #555; white-space: nowrap; }
+  .popup-table td:last-child { overflow-wrap: anywhere; }
 
   /* --- Térképi címkék (permanens tooltip-ek) --- */
   .mav-label {
@@ -107,7 +108,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-26 -- Segédüzemi transzformátor: külön OSM node (power=transformer) támogatás';
+  const BUILD_VERZIO = '2026-09-26c -- Popup: szélesebb keret+törésbiztos érték, rövidített Vonal/Oszlop típusa';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -873,7 +874,7 @@
       (SAJAT_OPCIO_NEVEK[mezoKod] && SAJAT_OPCIO_NEVEK[mezoKod][opcioKod]) || opcioKod;
 
     // 1. Vonal, 2. Oszlopszám
-    sor('Vonal', sajat._vonal);
+    sor('Vonal', (sajat._vonal || '').split(' ')[0]);
     sor('Oszlopszám', sajat.szam);
 
     // 3. Szikraköz, Fixpont, Földelés, Földelési pont
@@ -930,10 +931,13 @@
       });
     }
 
-    // 8. Oszlop típusa (tőcsavaros kivitel jelezve, ha van)
+    // 8. Oszlop típusa (tőcsavaros kivitel jelezve, ha van) -- csak a rövid kód (pl. "K",
+    // tőcsavarosnál "KC"), a teljes szöveges nevet ("Keresztmező") nem, ahogy a
+    // cimke_epito.js is a rövid kódot használja (2026-09-26-i kerés: ez a szakmai infó
+    // ismert, csak helyet foglal a popupban).
     if (sajat.oszlop_tipus) {
-      const tipusNev = opcioNev('oszlop_tipus', sajat.oszlop_tipus);
-      sor('Oszlop típusa', sajat.tocsavaros ? `${tipusNev}, tőcsavaros kivitel` : tipusNev);
+      const tipusKod = sajat.oszlop_tipus + (sajat.tocsavaros ? 'C' : '');
+      sor('Oszlop típusa', tipusKod);
     }
 
     // 9. Szerkezeti elem mérete (fa oszlopnál nincs értelmezve)
@@ -1099,7 +1103,7 @@
   function addMarker(type, lat, lon, tags, memberCount, feature) {
     const marker = L.marker([lat, lon], { icon: makeIcon(type.color, type.shape), draggable: false });
     const html = popupContent(tags, type, lat, lon);
-    marker.bindPopup(html);
+    marker.bindPopup(html, { maxWidth: 380 });
     // A Leaflet alapértelmezett, bindPopup által beállított "kattintásra nyílik a popup"
     // viselkedést levesszük, és sajátra cseréljük -- mobilon a teljes oldalas nézetet
     // nyitjuk meg helyette, asztali gépen marad a megszokott kis popup.
