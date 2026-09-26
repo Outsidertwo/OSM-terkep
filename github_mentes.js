@@ -369,10 +369,88 @@ const githubMentes = (function () {
     }
   }
 
+  // Egyetlen, MÁR FELTÖLTÖTT toldás törlése egy vonal fájljából. Azonnal ír GitHub-ra
+  // (nem kerül pending-listába -- egyesével, ritkán történik, kevés (~50) tétel várható).
+  // Ugyanaz a GET+SHA+PUT+409-újrapróbálkozás minta, mint a pendingToldasFeltoltesVonalra-nál.
+  async function toldasTorleseElesbol(vonalKod, id, maxProbalkozas = 3) {
+    const path = `/repos/${REPO}/contents/${fajlUtvonalToldasok(vonalKod)}`;
+    for (let probalkozas = 1; probalkozas <= maxProbalkozas; probalkozas++) {
+      const getValasz = await githubFetch(`${path}?ref=${BRANCH}`, { method: 'GET' });
+      if (getValasz.status === 404) throw new Error('A toldás-fájl nem létezik -- nincs mit törölni.');
+      if (getValasz.status !== 200) {
+        const hibaSzoveg = await getValasz.text().catch(() => '');
+        throw new Error(`Nem sikerült lekérni a toldás-fájlt (${getValasz.status}): ${hibaSzoveg}`);
+      }
+      const adat = await getValasz.json();
+      const sha = adat.sha;
+      const sorok = b64Decode(adat.content.replace(/\n/g, '')).split('\n').filter(s => s.trim() !== '');
+      const megmaradoSorok = sorok.filter(sor => {
+        try { return JSON.parse(sor).id !== id; } catch (e) { return true; } // hibás sor: érintetlenül marad
+      });
+      if (megmaradoSorok.length === sorok.length) {
+        throw new Error('A törlendő toldás nem található a fájlban (esetleg már törölve lett).');
+      }
+
+      const body = {
+        message: `Vezeték-toldás törlése (${vonalKod}, ${id})`,
+        content: b64Encode(megmaradoSorok.length ? megmaradoSorok.join('\n') + '\n' : ''),
+        branch: BRANCH,
+        sha
+      };
+      const putValasz = await githubFetch(path, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      if (putValasz.ok) return await putValasz.json();
+      if (putValasz.status === 409 && probalkozas < maxProbalkozas) continue;
+      const hibaSzoveg = await putValasz.text().catch(() => '');
+      throw new Error(`Toldás törlése sikertelen (${putValasz.status}) ${maxProbalkozas} próbálkozás után: ${hibaSzoveg}`);
+    }
+  }
+
+  // Egyetlen, MÁR FELTÖLTÖTT toldás mezőinek szerkesztése (azonnal ír GitHub-ra, mint a
+  // törlés). A pozíció (lat/lon) és az id NEM módosul -- ha a helyzet téves, a törlés +
+  // újrafelvétel a helyes út, nem a szerkesztés.
+  async function toldasSzerkeszteseElesben(vonalKod, id, ujMezok, maxProbalkozas = 3) {
+    const path = `/repos/${REPO}/contents/${fajlUtvonalToldasok(vonalKod)}`;
+    for (let probalkozas = 1; probalkozas <= maxProbalkozas; probalkozas++) {
+      const getValasz = await githubFetch(`${path}?ref=${BRANCH}`, { method: 'GET' });
+      if (getValasz.status !== 200) {
+        const hibaSzoveg = await getValasz.text().catch(() => '');
+        throw new Error(`Nem sikerült lekérni a toldás-fájlt (${getValasz.status}): ${hibaSzoveg}`);
+      }
+      const adat = await getValasz.json();
+      const sha = adat.sha;
+      const sorok = b64Decode(adat.content.replace(/\n/g, '')).split('\n').filter(s => s.trim() !== '');
+      let talalt = false;
+      const ujSorok = sorok.map(sor => {
+        try {
+          const rekord = JSON.parse(sor);
+          if (rekord.id === id) { talalt = true; return JSON.stringify({ ...rekord, ...ujMezok }); }
+        } catch (e) { /* hibás sor: érintetlenül marad */ }
+        return sor;
+      });
+      if (!talalt) throw new Error('A szerkesztendő toldás nem található a fájlban.');
+
+      const body = {
+        message: `Vezeték-toldás szerkesztése (${vonalKod}, ${id})`,
+        content: b64Encode(ujSorok.join('\n') + '\n'),
+        branch: BRANCH,
+        sha
+      };
+      const putValasz = await githubFetch(path, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      if (putValasz.ok) return await putValasz.json();
+      if (putValasz.status === 409 && probalkozas < maxProbalkozas) continue;
+      const hibaSzoveg = await putValasz.text().catch(() => '');
+      throw new Error(`Toldás szerkesztése sikertelen (${putValasz.status}) ${maxProbalkozas} próbálkozás után: ${hibaSzoveg}`);
+    }
+  }
+
   return {
     tokenBeallitasa, token, tokenVan, tokenTorlese, rekordMentese, ujRekordokKotegeltMentese,
     pendingOlvasas, pendingMentese, pendingTorles, pendingDarab, pendingFeltoltesVonalra,
     fajlUtvonalToldasok, pendingToldasOlvasas, pendingToldasMentese, pendingToldasTorles,
-    pendingToldasDarab, pendingToldasFeltoltesVonalra
+    pendingToldasDarab, pendingToldasFeltoltesVonalra, toldasTorleseElesbol, toldasSzerkeszteseElesben
   };
 })();

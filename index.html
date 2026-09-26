@@ -78,7 +78,7 @@
   <div id="pendingListaTartalom"></div>
 </div>
 <div id="toldasUrlapPanel" style="display:none; position:absolute; top:120px; left:56px; z-index:1001; background:white; padding:12px 14px; border-radius:4px; box-shadow:0 2px 10px rgba(0,0,0,0.4); font-size:13px; max-width:270px;">
-  <b>Új vezeték-toldás</b>
+  <b id="toldasUrlapCim">Új vezeték-toldás</b>
   <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">
     <label>Vonal<br><select id="toldasVonalSelect" style="width:100%; padding:4px;"></select></label>
     <label>Áramkör<br><input id="toldasAramkorInput" type="text" style="width:100%; padding:4px; box-sizing:border-box;"></label>
@@ -107,7 +107,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-26 -- [DIAG] naplózás eltávolítva (nagytakarítás)';
+  const BUILD_VERZIO = '2026-09-26b -- Már feltöltött toldások szerkesztése/törlése a popupból';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -264,8 +264,15 @@
   const toldasMunkavezetekLayer = L.layerGroup().addTo(map);
   const toldasTartosodronyLayer = L.layerGroup().addTo(map);
   const toldasMarkerekIdSzerint = new Map(); // id -> [marker, marker, ...]
+  const toldasVonalIdSzerint = new Map(); // id -> vonalKod (kell az élesben törléshez/szerkesztéshez, hogy tudjuk melyik fájlt kell módosítani)
   let toldasFelveteliMod = false;
   let toldasIdeiglenesLatLng = null;
+  // Már feltöltött toldás szerkesztése alatt a form ezt tölti ki -- ha null, a Mentés
+  // gomb új toldást hoz létre (eredeti viselkedés). Pozíció szerkesztésnél nem változik --
+  // ha a helyzet téves, törlés + újrafelvétel a helyes megoldás.
+  let toldasSzerkesztettId = null;
+  let toldasSzerkesztettRekord = null;
+  let toldasSzerkesztettVonalKod = null;
 
   function toldasVonalSelectFeltoltes() {
     const sel = document.getElementById('toldasVonalSelect');
@@ -287,11 +294,21 @@
     if (pendingE) {
       html += `<br><button data-toldas-torles-id="${escapeHtml(rekord.id)}" ` +
         `style="margin-top:6px; border:1px solid #cc0000; color:#cc0000; background:white; border-radius:4px; padding:3px 8px; font-size:12px; cursor:pointer;">Törlés</button>`;
+    } else if (osmSzerkesztesEngedelyezve) {
+      // Már feltöltött toldás -- szerkesztés/törlés csak bejelentkezve, és azonnal
+      // GitHub-ra ír (nem kerül a köteges pending-listába, mivel egyesével, ritkán történik).
+      html += `<div style="margin-top:6px; display:flex; gap:6px;">
+        <button data-toldas-szerkesztes-id="${escapeHtml(rekord.id)}"
+                style="border:1px solid #ccc; background:#f0f0f0; border-radius:4px; padding:3px 8px; font-size:12px; cursor:pointer;">Szerkesztés</button>
+        <button data-toldas-eles-torles-id="${escapeHtml(rekord.id)}"
+                style="border:1px solid #cc0000; color:#cc0000; background:white; border-radius:4px; padding:3px 8px; font-size:12px; cursor:pointer;">Törlés</button>
+      </div>`;
     }
     return html;
   }
 
-  function toldasMarkerHozzaadas(rekord, pendingE) {
+  function toldasMarkerHozzaadas(rekord, pendingE, vonalKod) {
+    toldasVonalIdSzerint.set(rekord.id, vonalKod);
     const markerek = [];
     const html = toldasPopupHtml(rekord, pendingE);
     const stilus = {
@@ -310,8 +327,8 @@
       markerek.push(m);
     }
     markerek.forEach(m => m.on('popupopen', () => {
-      const btn = document.querySelector(`[data-toldas-torles-id="${rekord.id}"]`);
-      if (btn) btn.addEventListener('click', () => {
+      const torlesBtn = document.querySelector(`[data-toldas-torles-id="${rekord.id}"]`);
+      if (torlesBtn) torlesBtn.addEventListener('click', () => {
         if (!confirm('Biztosan törlöd ezt a még fel nem töltött toldást?')) return;
         githubMentes.pendingToldasTorles(rekord.id);
         (toldasMarkerekIdSzerint.get(rekord.id) || []).forEach(mm => {
@@ -319,10 +336,77 @@
           toldasTartosodronyLayer.removeLayer(mm);
         });
         toldasMarkerekIdSzerint.delete(rekord.id);
+        toldasVonalIdSzerint.delete(rekord.id);
         toldasSzamlaloFrissites();
+      });
+
+      const szerkesztesBtn = document.querySelector(`[data-toldas-szerkesztes-id="${rekord.id}"]`);
+      if (szerkesztesBtn) szerkesztesBtn.addEventListener('click', () => {
+        map.closePopup();
+        toldasSzerkesztesMegnyitas(rekord, toldasVonalIdSzerint.get(rekord.id));
+      });
+
+      const elesTorlesBtn = document.querySelector(`[data-toldas-eles-torles-id="${rekord.id}"]`);
+      if (elesTorlesBtn) elesTorlesBtn.addEventListener('click', async () => {
+        if (!confirm('Biztosan törlöd ezt a MÁR FELTÖLTÖTT toldást? Ez azonnal GitHub-ra ír, nem vonható vissza egy kattintással.')) return;
+        if (typeof githubMentes === 'undefined' || !githubMentes.tokenVan()) {
+          alert('A törléshez be kell állítani a GitHub tokent -- nyiss meg egy oszlopot Szerkesztésre, ott az adatlapon található a token-beállítás.');
+          return;
+        }
+        const vonalKod = toldasVonalIdSzerint.get(rekord.id);
+        elesTorlesBtn.disabled = true;
+        elesTorlesBtn.textContent = 'Törlés...';
+        try {
+          await githubMentes.toldasTorleseElesbol(vonalKod, rekord.id);
+          (toldasMarkerekIdSzerint.get(rekord.id) || []).forEach(mm => {
+            toldasMunkavezetekLayer.removeLayer(mm);
+            toldasTartosodronyLayer.removeLayer(mm);
+          });
+          toldasMarkerekIdSzerint.delete(rekord.id);
+          toldasVonalIdSzerint.delete(rekord.id);
+        } catch (err) {
+          alert('Törlés sikertelen: ' + err.message);
+          elesTorlesBtn.disabled = false;
+          elesTorlesBtn.textContent = 'Törlés';
+        }
       });
     }));
     toldasMarkerekIdSzerint.set(rekord.id, markerek);
+  }
+
+  // Már feltöltött toldás szerkesztésének megnyitása -- ugyanaz az űrlap, mint az újnál,
+  // csak előre kitöltve, a Vonal-választó letiltva (a fájl-hovatartozás szerkesztésnél
+  // nem módosítható), és a pozíció (lat/lon) érintetlenül megy tovább Mentéskor.
+  function toldasSzerkesztesMegnyitas(rekord, vonalKod) {
+    toldasSzerkesztettId = rekord.id;
+    toldasSzerkesztettRekord = rekord;
+    toldasSzerkesztettVonalKod = vonalKod;
+    toldasVonalSelectFeltoltes();
+    const sel = document.getElementById('toldasVonalSelect');
+    sel.value = vonalKod;
+    sel.disabled = true;
+    document.getElementById('toldasAramkorInput').value = rekord.aramkor || '';
+    document.getElementById('toldasVaganyInput').value = rekord.vagany || '';
+    document.getElementById('toldasHosszlancInput').value = rekord.hosszlanc || '';
+    document.getElementById('toldasMunkavezetekCheckbox').checked = !!rekord.munkavezetek;
+    document.getElementById('toldasTartosodronyCheckbox').checked = !!rekord.tartosodrony;
+    document.getElementById('toldasUrlapCim').textContent = 'Vezeték-toldás szerkesztése';
+    document.getElementById('toldasUrlapPanel').style.display = '';
+  }
+
+  function toldasUrlapBezarasVisszaallitas() {
+    document.getElementById('toldasUrlapPanel').style.display = 'none';
+    document.getElementById('toldasVonalSelect').disabled = false;
+    document.getElementById('toldasUrlapCim').textContent = 'Új vezeték-toldás';
+    document.getElementById('toldasAramkorInput').value = '';
+    document.getElementById('toldasVaganyInput').value = '';
+    document.getElementById('toldasHosszlancInput').value = '';
+    document.getElementById('toldasMunkavezetekCheckbox').checked = true;
+    document.getElementById('toldasTartosodronyCheckbox').checked = false;
+    toldasIdeiglenesLatLng = null;
+    toldasSzerkesztettId = null;
+    toldasSzerkesztettRekord = null;
+    toldasSzerkesztettVonalKod = null;
   }
 
   function toldasModValt() {
@@ -343,42 +427,65 @@
   });
 
   document.getElementById('toldasMegseBtn').addEventListener('click', () => {
-    document.getElementById('toldasUrlapPanel').style.display = 'none';
-    toldasIdeiglenesLatLng = null;
+    toldasUrlapBezarasVisszaallitas();
   });
 
-  document.getElementById('toldasMentesBtn').addEventListener('click', () => {
-    if (!toldasIdeiglenesLatLng) return;
-    const vonalKod = document.getElementById('toldasVonalSelect').value;
-    if (!vonalKod) { alert('Nincs kiválasztható (aktív) vonal.'); return; }
+  document.getElementById('toldasMentesBtn').addEventListener('click', async () => {
     const munkavezetek = document.getElementById('toldasMunkavezetekCheckbox').checked;
     const tartosodrony = document.getElementById('toldasTartosodronyCheckbox').checked;
     if (!munkavezetek && !tartosodrony) { alert('Legalább az egyik vezetéktípust jelöld be.'); return; }
+    const ujMezok = {
+      aramkor: document.getElementById('toldasAramkorInput').value.trim(),
+      vagany: document.getElementById('toldasVaganyInput').value.trim(),
+      hosszlanc: document.getElementById('toldasHosszlancInput').value.trim(),
+      munkavezetek, tartosodrony
+    };
+
+    if (toldasSzerkesztettId) {
+      // Már feltöltött toldás szerkesztése -- azonnal GitHub-ra ír, pozíció nem változik.
+      const id = toldasSzerkesztettId;
+      const vonalKod = toldasSzerkesztettVonalKod;
+      const regiRekord = toldasSzerkesztettRekord;
+      const mentesBtn = document.getElementById('toldasMentesBtn');
+      mentesBtn.disabled = true;
+      mentesBtn.textContent = 'Mentés...';
+      try {
+        await githubMentes.toldasSzerkeszteseElesben(vonalKod, id, ujMezok);
+        (toldasMarkerekIdSzerint.get(id) || []).forEach(mm => {
+          toldasMunkavezetekLayer.removeLayer(mm);
+          toldasTartosodronyLayer.removeLayer(mm);
+        });
+        toldasMarkerekIdSzerint.delete(id);
+        toldasMarkerHozzaadas({ ...regiRekord, ...ujMezok }, false, vonalKod);
+        toldasUrlapBezarasVisszaallitas();
+      } catch (err) {
+        alert('Szerkesztés sikertelen: ' + err.message);
+      }
+      mentesBtn.disabled = false;
+      mentesBtn.textContent = 'Mentés';
+      return;
+    }
+
+    // Új toldás felvétele -- eredeti, pending-alapú viselkedés.
+    if (!toldasIdeiglenesLatLng) return;
+    const vonalKod = document.getElementById('toldasVonalSelect').value;
+    if (!vonalKod) { alert('Nincs kiválasztható (aktív) vonal.'); return; }
     const id = 'toldas_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
     const rekord = {
       id,
       lat: toldasIdeiglenesLatLng.lat,
       lon: toldasIdeiglenesLatLng.lng,
-      aramkor: document.getElementById('toldasAramkorInput').value.trim(),
-      vagany: document.getElementById('toldasVaganyInput').value.trim(),
-      hosszlanc: document.getElementById('toldasHosszlancInput').value.trim(),
-      munkavezetek, tartosodrony,
+      ...ujMezok,
       letrehozva: new Date().toISOString()
     };
     githubMentes.pendingToldasMentese(id, rekord, vonalKod);
-    toldasMarkerHozzaadas(rekord, true);
-    document.getElementById('toldasUrlapPanel').style.display = 'none';
-    document.getElementById('toldasAramkorInput').value = '';
-    document.getElementById('toldasVaganyInput').value = '';
-    document.getElementById('toldasHosszlancInput').value = '';
-    document.getElementById('toldasMunkavezetekCheckbox').checked = true;
-    document.getElementById('toldasTartosodronyCheckbox').checked = false;
-    toldasIdeiglenesLatLng = null;
+    toldasMarkerHozzaadas(rekord, true, vonalKod);
+    toldasUrlapBezarasVisszaallitas();
     toldasSzamlaloFrissites();
   });
 
-  // Már feltöltött (GitHub-on lévő) toldások betöltése -- egyelőre csak megjelenítés,
-  // törlés/szerkesztés rájuk egyelőre nincs (kevés tétel várható, ~50 db összesen).
+  // Már feltöltött (GitHub-on lévő) toldások betöltése -- szerkesztés/törlés a popupjukból
+  // elérhető, bejelentkezve (lásd toldasPopupHtml és toldasSzerkesztesMegnyitas).
   async function toldasokBetoltese() {
     for (const vonal of VONALAK.filter(v => v.aktiv)) {
       const vonalKod = vonalKodja(vonal);
@@ -389,7 +496,7 @@
         szoveg.split('\n').filter(s => s.trim() !== '').forEach(sor => {
           try {
             const rekord = JSON.parse(sor);
-            if (rekord.id) toldasMarkerHozzaadas(rekord, false);
+            if (rekord.id) toldasMarkerHozzaadas(rekord, false, vonalKod);
           } catch (err) { console.warn('Hibás toldás-sor kihagyva:', err); }
         });
       } catch (err) {
