@@ -211,10 +211,19 @@
           "osm": null
         },
         {
+          "kod": "trafo_osm_id",
+          "nev": "Transzformátor OSM node ID",
+          "tipus": "szoveg",
+          "terkepen": false,
+          "osm": null,
+          "megjegyzes": "A power=transformer node OSM-azonosítója, miután kézzel (iD/JOSM) létrehoztad -- amíg üres, a Gyártó/Típus csak helyben (GitHub) tárolódik, OSM-re nem megy ki."
+        },
+        {
           "kod": "manufacturer",
           "nev": "Gyártó",
           "tipus": "szoveg",
           "terkepen": false,
+          "celpont": "trafo",
           "osm": {
             "manufacturer": "{ertek}"
           }
@@ -224,6 +233,7 @@
           "nev": "Típus",
           "tipus": "szoveg",
           "terkepen": false,
+          "celpont": "trafo",
           "osm": {
             "model": "{ertek}"
           }

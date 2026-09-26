@@ -107,7 +107,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-26b -- Már feltöltött toldások szerkesztése/törlése a popupból';
+  const BUILD_VERZIO = '2026-09-26 -- Segédüzemi transzformátor: külön OSM node (power=transformer) támogatás';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -898,10 +898,17 @@
     // 5. Szakaszoló azonosítója
     if (sajat.szakaszolo && sajat.szakaszolo_nev) sor('Szakaszoló azonosítója', sajat.szakaszolo_nev);
 
-    // 6. Transzformátor -- összevonva: azonosító — gyártó — típus
+    // 6. Transzformátor -- összevonva: azonosító — gyártó — típus, + saját OSM node linkje,
+    // ha már meg van adva (2026-09-26: pole és transformer az OSM-ben két külön node).
     if (sajat.trafo) {
       const reszek = [sajat.trafo_nev, sajat.manufacturer, sajat.model].filter(Boolean);
-      sor('Transzformátor', reszek.join(' — '));
+      if (sajat.trafo_osm_id) {
+        const ertekHtml = `${escapeHtml(reszek.join(' — ') || '(nincs megnevezve)')} ` +
+          `(<a href="https://www.openstreetmap.org/node/${escapeHtml(sajat.trafo_osm_id)}" target="_blank">OSM node ${escapeHtml(sajat.trafo_osm_id)}</a>)`;
+        sorok.push(`<tr><td>Transzformátor</td><td>${ertekHtml}</td></tr>`);
+      } else if (reszek.length > 0) {
+        sor('Transzformátor', reszek.join(' — '));
+      }
     }
 
     // 7. Csoportos tartószerkezet ("nincs" nem jelenik meg)
@@ -1804,6 +1811,18 @@
           const osmTetelek = tetelek
             .filter(({ rekord }) => rekord && rekord.osm_tagek && rekord._osm_id && rekord.lat != null && rekord.lon != null)
             .map(({ rekord }) => ({ osmId: rekord._osm_id, lat: rekord.lat, lon: rekord.lon, ujTagek: rekord.osm_tagek }));
+          // Segédüzemi transzformátorok (2026-09-26): ha az oszlophoz tartozik már OSM node-dal
+          // rendelkező trafó (trafo_osm_id kitöltve), a rá szánt tageket (trafo_osm_tagek --
+          // jelenleg manufacturer/model) UGYANEBBE a kötegbe tesszük, csak külön "tétel"-ként,
+          // a trafó saját node ID-jával. A pózna helyzetét használjuk (lásd korábbi egyeztetés:
+          // a trafó ugyanoda kerül, mint az oszlop) -- a csomagFeltoltese() egyébként semmit nem
+          // tud/kell tudnia arról, hogy ez pózna vagy trafó node, csak id+lat+lon+tagek kell neki.
+          tetelek.forEach(({ rekord }) => {
+            if (rekord && rekord.trafo_osm_id && rekord.trafo_osm_tagek && Object.keys(rekord.trafo_osm_tagek).length > 0
+                && rekord.lat != null && rekord.lon != null) {
+              osmTetelek.push({ osmId: rekord.trafo_osm_id, lat: rekord.lat, lon: rekord.lon, ujTagek: rekord.trafo_osm_tagek });
+            }
+          });
           if (osmTetelek.length > 0) {
             statusEl.textContent = `OSM-re írás: ${vonalKod} (${osmTetelek.length} oszlop)...`;
             try {
