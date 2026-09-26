@@ -9,7 +9,7 @@
 
   "oszlop_duplikalt_raw_tagek": [
     "actuator", "catenary_mast:supporting", "guyed", "location",
-    "manufacturer", "model", "ref", "ref:switch", "structure", "switch", "tensioning"
+    "manufacturer", "material", "model", "ref", "ref:switch", "structure", "switch", "tensioning"
   ],
 
   "mezo_forditasok": {
