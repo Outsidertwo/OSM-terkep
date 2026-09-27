@@ -74,9 +74,12 @@
   <div id="vonalLista" style="margin-top:6px;"></div>
 </div>
 <div id="pendingListaPanel" style="display:none; position:absolute; top:120px; left:56px; z-index:1001; background:white; padding:12px 14px; border-radius:4px; box-shadow:0 2px 10px rgba(0,0,0,0.4); font-size:13px; max-width:420px; max-height:70vh; overflow-y:auto;">
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
     <b>Mentetlen módosítások</b>
     <button onclick="document.getElementById('pendingListaPanel').style.display='none';" style="border:none; background:none; font-size:16px; cursor:pointer; line-height:1;">✕</button>
+  </div>
+  <div style="font-size:11px; color:#999; margin-bottom:6px;">
+    <span style="color:#008a00;">zöld</span> = új adat, <span style="color:#cc0000; text-decoration:line-through;">piros, áthúzva</span> = törölt adat (az utoljára mentetthez képest)
   </div>
   <div id="pendingListaTartalom"></div>
 </div>
@@ -110,7 +113,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-26e -- Térképcímke: szakaszoló neve piros, trafó neve kék';
+  const BUILD_VERZIO = '2026-09-26f -- Mentetlen módosítások lista: törölt adat piros/áthúzott, új adat zöld';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -875,62 +878,104 @@
   // listázással építjük, hanem az Lászlóval egyeztetett fix sorrendben, néhány mezőt
   // egyetlen, összevont sorba vonva (Súly, Transzformátor, Oszloplehorgonyzás) -- ezek
   // külön-külön sorként csak zajt jelentenének, a lényeg egy pillantásra kell látsszon.
-  function epitsOszlopSajatSort(sajat) {
+  function epitsOszlopSajatSort(sajat, alap) {
     if (!sajat) return '';
+    // Diff-mód (2026-09-26): ha kapunk egy "alap" (utoljára GitHub-ra mentett, azaz a
+    // Mentetlen módosítások panelen az összehasonlítási alap) rekordot is, a sorok egy
+    // része pirossal (törölve, a régi értékkel áthúzva) vagy zölddel (újonnan kitöltve)
+    // jelenik meg. A popup saját (nem-diff) hívásainál alap=undefined -- ott minden a
+    // korábbi, egyszerű módon jelenik meg, változatlanul.
+    //
+    // Csak az ÖNÁLLÓ (nem több egymástól független al-mezőt összevonó) sorok kapnak
+    // pontos diffet -- pl. Súly vagy Oszloplehorgonyzás is "önállónak" számít itt, mert
+    // egyetlen összefoglaló szöveggé alakul, tehát a diff természetesen egész-sor szintű
+    // marad rájuk nézve is. A Szerkezeti szigetelők lista (tömb, indexelt) és a
+    // Transzformátor (beágyazott OSM-link miatt) egyedi kezelést kap lentebb.
+    const diffMod = !!alap;
+    const A = alap || {};
+    const uresE = (v) => v === undefined || v === null || v === '';
     const sorok = [];
-    const sor = (cimke, ertek) => {
-      if (ertek === undefined || ertek === null || ertek === '') return;
+    const sorSima = (cimke, ertek) => {
+      if (uresE(ertek)) return;
       sorok.push(`<tr><td>${escapeHtml(cimke)}</td><td>${escapeHtml(String(ertek))}</td></tr>`);
+    };
+    const sorDiff = (cimke, ujErtek, regiErtek) => {
+      if (!diffMod) { sorSima(cimke, ujErtek); return; }
+      if (uresE(ujErtek) && uresE(regiErtek)) return;
+      let stilus = '';
+      let megjelenitett = ujErtek;
+      if (uresE(ujErtek) && !uresE(regiErtek)) {
+        stilus = ' style="color:#cc0000; text-decoration:line-through;"';
+        megjelenitett = regiErtek;
+      } else if (!uresE(ujErtek) && uresE(regiErtek)) {
+        stilus = ' style="color:#008a00;"';
+      }
+      sorok.push(`<tr><td>${escapeHtml(cimke)}</td><td${stilus}>${escapeHtml(String(megjelenitett))}</td></tr>`);
     };
     const opcioNev = (mezoKod, opcioKod) =>
       (SAJAT_OPCIO_NEVEK[mezoKod] && SAJAT_OPCIO_NEVEK[mezoKod][opcioKod]) || opcioKod;
 
     // 1. Vonal, 2. Oszlopszám
-    sor('Vonal', (sajat._vonal || '').split(' ')[0]);
-    sor('Oszlopszám', sajat.szam);
+    sorDiff('Vonal', (sajat._vonal || '').split(' ')[0], (A._vonal || '').split(' ')[0]);
+    sorDiff('Oszlopszám', sajat.szam, A.szam);
 
     // 3. Szikraköz, Fixpont, Földelés, Földelési pont
-    if (sajat.szikrakoz) sor('Szikraköz', 'igen');
-    if (sajat.fixpont) sor('Fixpont', 'igen');
-    if (sajat.foldeles) {
-      const foldelesNev = opcioNev('foldeles', sajat.foldeles);
-      const foldelesErtek = (sajat.foldeles === 'egyedi' && sajat.foldeles_meret !== '' && sajat.foldeles_meret != null)
-        ? `${foldelesNev} (${sajat.foldeles_meret} m)` : foldelesNev;
-      sor('Földelés', foldelesErtek);
-    }
-    if (sajat.foldelesi_pont) sor('Földelési pont', 'igen');
+    sorDiff('Szikraköz', sajat.szikrakoz ? 'igen' : '', A.szikrakoz ? 'igen' : '');
+    sorDiff('Fixpont', sajat.fixpont ? 'igen' : '', A.fixpont ? 'igen' : '');
+    const foldelesErtek = (s) => {
+      if (!s.foldeles) return '';
+      const nev = opcioNev('foldeles', s.foldeles);
+      return (s.foldeles === 'egyedi' && s.foldeles_meret !== '' && s.foldeles_meret != null)
+        ? `${nev} (${s.foldeles_meret} m)` : nev;
+    };
+    sorDiff('Földelés', foldelesErtek(sajat), foldelesErtek(A));
+    sorDiff('Földelési pont', sajat.foldelesi_pont ? 'igen' : '', A.foldelesi_pont ? 'igen' : '');
 
-    // 4. Súly -- egyetlen sor, a három lehetőség egymást kizárja
-    if (sajat.sulyos) {
-      let sulyErtek = 'súlykosár';
-      if (sajat.suly_tipus === 'rugos') sulyErtek = 'rugós';
-      else if (sajat.sulykosar_tipus === 'vezetorud') sulyErtek = 'vezetőrúd';
-      sor('Súly', sulyErtek);
-    }
+    // 4. Súly -- egyetlen összefoglaló sor, a három lehetőség egymást kizárja
+    const sulyErtek = (s) => {
+      if (!s.sulyos) return '';
+      if (s.suly_tipus === 'rugos') return 'rugós';
+      if (s.sulykosar_tipus === 'vezetorud') return 'vezetőrúd';
+      return 'súlykosár';
+    };
+    sorDiff('Súly', sulyErtek(sajat), sulyErtek(A));
 
     // 5. Szakaszoló azonosítója
-    if (sajat.szakaszolo && sajat.szakaszolo_nev) sor('Szakaszoló azonosítója', sajat.szakaszolo_nev);
+    sorDiff('Szakaszoló azonosítója', (sajat.szakaszolo && sajat.szakaszolo_nev) || '', (A.szakaszolo && A.szakaszolo_nev) || '');
 
     // 6. Transzformátor -- összevonva: azonosító — gyártó — típus, + saját OSM node linkje,
-    // ha már meg van adva (2026-09-26: pole és transformer az OSM-ben két külön node).
-    if (sajat.trafo) {
-      const reszek = [sajat.trafo_nev, sajat.manufacturer, sajat.model].filter(Boolean);
-      if (sajat.trafo_osm_id) {
-        const ertekHtml = `${escapeHtml(reszek.join(' — ') || '(nincs megnevezve)')} ` +
-          `(<a href="https://www.openstreetmap.org/node/${escapeHtml(sajat.trafo_osm_id)}" target="_blank">OSM node ${escapeHtml(sajat.trafo_osm_id)}</a>)`;
-        sorok.push(`<tr><td>Transzformátor</td><td>${ertekHtml}</td></tr>`);
-      } else if (reszek.length > 0) {
-        sor('Transzformátor', reszek.join(' — '));
+    // ha már meg van adva. Egyedi kezelés kell (nem sorDiff), mert a link HTML-jét csak az
+    // "aktuális" ágon mutatjuk, törölt sornál a régi szöveges összefoglaló elég.
+    const trafoSzoveg = (s) => {
+      if (!s.trafo) return null;
+      const reszek = [s.trafo_nev, s.manufacturer, s.model].filter(Boolean);
+      return reszek.join(' — ') || '(nincs megnevezve)';
+    };
+    const ujTrafoTxt = trafoSzoveg(sajat);
+    const regiTrafoTxt = diffMod ? trafoSzoveg(A) : null;
+    if (ujTrafoTxt != null || regiTrafoTxt != null) {
+      let stilus = '';
+      let szoveg = ujTrafoTxt;
+      if (diffMod && ujTrafoTxt == null && regiTrafoTxt != null) {
+        stilus = ' style="color:#cc0000; text-decoration:line-through;"';
+        szoveg = regiTrafoTxt;
+      } else if (diffMod && ujTrafoTxt != null && regiTrafoTxt == null) {
+        stilus = ' style="color:#008a00;"';
       }
+      let ertekHtml = escapeHtml(szoveg);
+      if (szoveg === ujTrafoTxt && sajat.trafo && sajat.trafo_osm_id) {
+        ertekHtml += ` (<a href="https://www.openstreetmap.org/node/${escapeHtml(sajat.trafo_osm_id)}" target="_blank">OSM node ${escapeHtml(sajat.trafo_osm_id)}</a>)`;
+      }
+      sorok.push(`<tr><td>Transzformátor</td><td${stilus}>${ertekHtml}</td></tr>`);
     }
 
     // 7. Csoportos tartószerkezet ("nincs" nem jelenik meg)
-    if (sajat.mit_tart && sajat.mit_tart !== 'nincs') sor('Csoportos tartószerkezet', opcioNev('mit_tart', sajat.mit_tart));
+    const mitTartErtek = (s) => (s.mit_tart && s.mit_tart !== 'nincs') ? opcioNev('mit_tart', s.mit_tart) : '';
+    sorDiff('Csoportos tartószerkezet', mitTartErtek(sajat), mitTartErtek(A));
 
-    // 7b. Szerkezeti szigetelők (tartószerkezetek) -- eddig teljesen hiányzott a popupról,
-    // mert nested tömb, amit a generikus mezőlistázó nem tudott értelmesen kiírni.
-    // Anyagkódok fordítása: nem "opciok", hanem "anyag_opciok" a sémában, ezért itt
-    // helyben, kis szótárral fordítjuk (csak ez a három állandó érték létezik).
+    // 7b. Szerkezeti szigetelők (tartószerkezetek) -- tömb, indexelt; a diff itt nem éri meg
+    // a bonyodalmat (elem hozzáadása/törlése/átrendezése nehezen egyértelműsíthető), ezért
+    // ez a rész mindkét módban ugyanúgy, színezés nélkül jelenik meg.
     const SZIGETELO_ANYAG_NEV = { porcelan: 'Porcelán', silicon: 'Szilikon', isofix: 'Isofix' };
     if (Array.isArray(sajat.tartoszerkezetek) && sajat.tartoszerkezetek.length > 0) {
       sajat.tartoszerkezetek.forEach((ts, i) => {
@@ -939,52 +984,56 @@
         const reszek = [];
         if (ts.fokar_anyag) reszek.push(`Főkar – ${SZIGETELO_ANYAG_NEV[ts.fokar_anyag] || ts.fokar_anyag}`);
         if (ts.masodik_anyag) reszek.push(`${masodikCimke} – ${SZIGETELO_ANYAG_NEV[ts.masodik_anyag] || ts.masodik_anyag}`);
-        sor(`Szerkezeti szigetelő ${i + 1} (${tipusNev})`, reszek.join(', '));
+        sorSima(`Szerkezeti szigetelő ${i + 1} (${tipusNev})`, reszek.join(', '));
       });
     }
 
     // 8. Oszlop típusa (tőcsavaros kivitel jelezve, ha van) -- csak a rövid kód (pl. "K",
-    // tőcsavarosnál "KC"), a teljes szöveges nevet ("Keresztmező") nem, ahogy a
-    // cimke_epito.js is a rövid kódot használja (2026-09-26-i kerés: ez a szakmai infó
-    // ismert, csak helyet foglal a popupban).
-    if (sajat.oszlop_tipus) {
-      const tipusKod = sajat.oszlop_tipus + (sajat.tocsavaros ? 'C' : '');
-      sor('Oszlop típusa', tipusKod);
-    }
+    // tőcsavarosnál "KC")
+    const tipusKod = (s) => s.oszlop_tipus ? (s.oszlop_tipus + (s.tocsavaros ? 'C' : '')) : '';
+    sorDiff('Oszlop típusa', tipusKod(sajat), tipusKod(A));
 
     // 9. Szerkezeti elem mérete (fa oszlopnál nincs értelmezve)
-    if (sajat.oszlop_tipus !== 'FA') sor('Szerkezeti elem mérete', sajat.szerkezeti_elem_meret);
+    sorDiff('Szerkezeti elem mérete', sajat.oszlop_tipus !== 'FA' ? sajat.szerkezeti_elem_meret : '',
+      A.oszlop_tipus !== 'FA' ? A.szerkezeti_elem_meret : '');
 
     // 10. Hasznos/Teljes hossz
-    sor('Hasznos hossz', sajat.hasznos_hossz !== '' && sajat.hasznos_hossz != null ? `${sajat.hasznos_hossz} m` : '');
-    sor('Teljes hossz', sajat.teljes_hossz !== '' && sajat.teljes_hossz != null ? `${sajat.teljes_hossz} m` : '');
+    const hosszMertekben = (v) => (v !== '' && v != null) ? `${v} m` : '';
+    sorDiff('Hasznos hossz', hosszMertekben(sajat.hasznos_hossz), hosszMertekben(A.hasznos_hossz));
+    sorDiff('Teljes hossz', hosszMertekben(sajat.teljes_hossz), hosszMertekben(A.teljes_hossz));
 
     // 11. Alaptípus, Alap mérete, Teljes betonmennyiség, Kihúzás mértéke
     //     (+ a szelvényezési/vágánytávolság-adatok, mert ugyanabba a geometriai
     //     csoportba tartoznak, külön nem kerültek szóba az egyeztetéskor)
-    if (sajat.alaptipus) sor('Alaptípus', sajat.alaptipus);
-    sor('Alap mérete', sajat.alap_meret);
-    sor('Teljes betonmennyiség', sajat.betonmennyiseg !== '' && sajat.betonmennyiseg != null ? `${sajat.betonmennyiseg} m³` : '');
-    sor('Kihúzás mértéke', sajat.kihuzas_merteke !== '' && sajat.kihuzas_merteke != null ? `${sajat.kihuzas_merteke} m` : '');
-    sor('Oszlop távolsága a szelvényezéshez', sajat.tavolsag_szelvenyezeshez);
-    sor('Oszlopél - vágánytengely távolság', sajat.oszlopel_vagany_tavolsag);
-    if (sajat.vaganyok_kozott) sor('Oszlopél - vágánytengely távolság (2. vágány)', sajat.oszlopel_vagany_tavolsag_2);
+    sorDiff('Alaptípus', sajat.alaptipus || '', A.alaptipus || '');
+    sorDiff('Alap mérete', sajat.alap_meret, A.alap_meret);
+    const m3Mertekben = (v) => (v !== '' && v != null) ? `${v} m³` : '';
+    sorDiff('Teljes betonmennyiség', m3Mertekben(sajat.betonmennyiseg), m3Mertekben(A.betonmennyiseg));
+    sorDiff('Kihúzás mértéke', hosszMertekben(sajat.kihuzas_merteke), hosszMertekben(A.kihuzas_merteke));
+    sorDiff('Oszlop távolsága a szelvényezéshez', sajat.tavolsag_szelvenyezeshez, A.tavolsag_szelvenyezeshez);
+    sorDiff('Oszlopél - vágánytengely távolság', sajat.oszlopel_vagany_tavolsag, A.oszlopel_vagany_tavolsag);
+    if (sajat.vaganyok_kozott || A.vaganyok_kozott) {
+      sorDiff('Oszlopél - vágánytengely távolság (2. vágány)', sajat.oszlopel_vagany_tavolsag_2, A.oszlopel_vagany_tavolsag_2);
+    }
 
-    // 12. Oszloplehorgonyzás -- összevonva
-    if (sajat.lehorgonyzas) {
-      const l = sajat.lehorgonyzas;
+    // 12. Oszloplehorgonyzás -- összevonva egyetlen összefoglaló szöveggé, a diff emiatt
+    // itt is természetesen egész-sor szintű marad.
+    const lehorgErtek = (s) => {
+      if (!s.lehorgonyzas) return '';
+      const l = s.lehorgonyzas;
       const kivitelNev = l.kivitel === 'terszini' ? 'térszíni' : (l.kivitel === 'magasitott' ? 'magasított' : null);
       const reszek = [];
       if (kivitelNev) reszek.push(kivitelNev);
       if (l.alaptipus) reszek.push(`${l.alaptipus} alaptípus`);
       if (l.meret) reszek.push(`alaptest ${l.meret}`);
       if (l.betonmennyiseg) reszek.push(`${l.betonmennyiseg} m³ beton`);
-      sor('Oszloplehorgonyzás', reszek.join(', '));
-    }
+      return reszek.join(', ');
+    };
+    sorDiff('Oszloplehorgonyzás', lehorgErtek(sajat), lehorgErtek(A));
 
     // 13. Megjegyzés, Fénykép
-    sor('Megjegyzés', sajat.megjegyzes);
-    sor('Fénykép', sajat.fenykep);
+    sorDiff('Megjegyzés', sajat.megjegyzes, A.megjegyzes);
+    sorDiff('Fénykép', sajat.fenykep, A.fenykep);
 
     return sorok.length > 0
       ? `<div style="font-size:12px; color:#888; margin:8px 0 2px;">Mentett kiegészítő adatok:</div>
@@ -1443,7 +1492,8 @@
       const fejlec = escapeHtml(rekord.szam || `(#${osmId})`) +
         (rekord._vonal ? ` — ${escapeHtml(rekord._vonal)}` : '') +
         (regi ? ' <span style="color:#b30000;" title="12 óránál régebbi mentés">⚠</span>' : '');
-      const reszletek = epitsOszlopSajatSort(rekord) ||
+      const alapRekord = sajatAdatokTerkep.get(String(osmId));
+      const reszletek = epitsOszlopSajatSort(rekord, alapRekord) ||
         '<div style="color:#999; font-size:12px;">(nincs kitöltött mező)</div>';
       return `<div style="border-top:1px solid #ddd; padding:8px 0;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
