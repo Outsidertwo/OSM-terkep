@@ -113,7 +113,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-26f -- Mentetlen módosítások lista: törölt adat piros/áthúzott, új adat zöld';
+  const BUILD_VERZIO = '2026-09-26g -- Oszlop-pöttyök jellemző szerinti színezése (szakaszoló/trafó/fixpont/súlyos), szelvénykő sárga';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -711,11 +711,25 @@
   // TÍPUSDEFINÍCIÓK
   // (Ez a blokk később egy külön konfiguracio.json fájlba kerül majd ki.)
   // ============================================================
+  // Oszlop-pötty színe a jellemzők alapján (2026-09-26, ikon-tervezés előtti előnézet):
+  // ha egy oszlopon több jellemző is igaz egyszerre, egy rögzített sorrend dönt, melyik
+  // szín "nyer" -- ez a sorrend (szakaszoló > trafó > fixpont > súlyos > sima szürke)
+  // egyeztetésre szorulhat, ha a gyakorlatban sok az átfedés.
+  function oszlopSzin(sajat) {
+    if (!sajat) return '#888';
+    if (sajat.szakaszolo) return '#cc0000';   // piros
+    if (sajat.trafo) return '#0055cc';        // kék
+    if (sajat.fixpont) return '#1a9c1a';      // zöld
+    if (sajat.sulyos) return '#222';          // fekete
+    return '#888';                            // sima oszlop -- szürke
+  }
+
   const TYPES = [
     {
       key: 'oszlop',
       label: 'Felsővezeték-oszlop',
-      color: '#1ae86b',
+      color: (t) => oszlopSzin(t._sajat),
+      clusterColor: '#1ae86b',
       shape: 'circle',
       test: (t) => t.power === 'catenary_mast' || t.power === 'pole',
       // A címke-építés a cimke_epito.js közös epitsCimkeHtml() függvényével történik,
@@ -727,7 +741,7 @@
     {
       key: 'szelvenyko',
       label: 'Szelvénykő',
-      color: '#1a73e8',
+      color: '#e0b400',
       shape: 'diamond',
       test: (t) => t.railway === 'milestone',
       buildLabelHtml: (t) => {
@@ -849,7 +863,7 @@
       iconCreateFunction: (cluster) => {
         const count = cluster.getChildCount();
         return L.divIcon({
-          html: `<div style="background:${type.color}; color:white; border-radius:50%;
+          html: `<div style="background:${typeof type.color === 'function' ? (type.clusterColor || '#888') : type.color}; color:white; border-radius:50%;
                       width:34px; height:34px; display:flex; align-items:center;
                       justify-content:center; font-weight:bold; font-size:12px;
                       border:2px solid white; box-shadow:0 0 3px rgba(0,0,0,0.6);">
@@ -1162,7 +1176,8 @@
   document.getElementById('mobilElemBezarBtn').addEventListener('click', mobilElemBezar);
 
   function addMarker(type, lat, lon, tags, memberCount, feature) {
-    const marker = L.marker([lat, lon], { icon: makeIcon(type.color, type.shape), draggable: false });
+    const szin = typeof type.color === 'function' ? type.color(tags) : type.color;
+    const marker = L.marker([lat, lon], { icon: makeIcon(szin, type.shape), draggable: false });
     const html = popupContent(tags, type, lat, lon);
     marker.bindPopup(html, { maxWidth: 380 });
     // A Leaflet alapértelmezett, bindPopup által beállított "kattintásra nyílik a popup"
