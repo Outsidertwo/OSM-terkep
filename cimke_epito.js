@@ -58,8 +58,8 @@
       else if (rekord['foldeles'] === 'felfuzott') leiroBitek.push('Fe');
       else if (rekord['foldeles'] === 'egyedi') leiroBitek.push('E');
       if (rekord['foldelesi_pont']) leiroBitek.push('fp');
-      if (rekord['szakaszolo'] && rekord['szakaszolo_nev']) leiroBitek.push(escapeHtmlCimke(rekord['szakaszolo_nev']));
-      if (rekord['trafo'] && rekord['trafo_nev']) leiroBitek.push(escapeHtmlCimke(rekord['trafo_nev']));
+      if (rekord['szakaszolo'] && rekord['szakaszolo_nev']) leiroBitek.push(`<span class="label-szakaszolo">${escapeHtmlCimke(rekord['szakaszolo_nev'])}</span>`);
+      if (rekord['trafo'] && rekord['trafo_nev']) leiroBitek.push(`<span class="label-trafo">${escapeHtmlCimke(rekord['trafo_nev'])}</span>`);
 
       leiroResz = leiroBitek.length > 0
         ? `<span class="label-desc">${leiroBitek.join(' ')}</span>` : '';

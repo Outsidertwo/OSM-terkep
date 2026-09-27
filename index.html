@@ -46,6 +46,8 @@
   .mav-label::before { display: none; } /* tooltip nyílvég elrejtése */
   .label-id { color: #000; font-weight: bold; }
   .label-desc { color: var(--pole-desc-color, #8a5a00); font-weight: bold; margin-left: 3px; }
+  .label-szakaszolo { color: #cc0000; }
+  .label-trafo { color: #0055cc; }
 
   /* Leaflet saját kezelőfelület-elemeinek (réteg-választó, gombok) nagyítása */
   .leaflet-control-layers { font-size: 15px; }
@@ -108,7 +110,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-26d -- Hibajavítás: trafó node write-back külön kezelt-kulcsokkal (ne törölje a power/location tageket)';
+  const BUILD_VERZIO = '2026-09-26e -- Térképcímke: szakaszoló neve piros, trafó neve kék';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;

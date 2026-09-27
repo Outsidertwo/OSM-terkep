@@ -2,7 +2,7 @@
 // feszítési terv konverter. Csak ezt a fájlt kell módosítani új logikai
 // finomításnál — az adatlap_teszt.html-hez nem kell hozzányúlni.
 
-  const BUILD_VERZIO = '2026-09-26 -- Segédüzemi transzformátor: külön OSM node (power=transformer) támogatás';
+  const BUILD_VERZIO = '2026-09-26e -- Térképcímke: szakaszoló neve piros, trafó neve kék';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
