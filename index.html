@@ -113,7 +113,7 @@
   // Build-verziószám: MINDEN egyes commitnál kézzel frissítendő (dátum + rövid leírás).
   // Ez a helyi fájl betöltése mező fölött jelenik meg -- innen mindig egyértelműen
   // látszik, hogy a böngésző tényleg a legfrissebb kódot szolgálja-e ki.
-  const BUILD_VERZIO = '2026-09-26g -- Oszlop-pöttyök jellemző szerinti színezése (szakaszoló/trafó/fixpont/súlyos), szelvénykő sárga';
+  const BUILD_VERZIO = '2026-09-26h -- Áthelyezés másik vonalra (popup, bármely elemtípus), csak bejelentkezve';
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('buildVerzio');
     if (el) el.textContent = 'Build: ' + BUILD_VERZIO;
@@ -1108,8 +1108,58 @@
       </div>`;
     }
 
-    return `${osmIdSor}<table class="popup-table">${rows}</table>${sajatSor}${gombok}`;
+    // Áthelyezés másik vonalra — bármelyik regisztrált elemtípusra (oszlop, szelvénykő,
+    // útátjáró, egyéb), csak bejelentkezve. Arra kell, ha az Overpass-regisztráció két
+    // vonal találkozásánál rossz vonalhoz sorolt be egy elemet (lásd 2026-09-26-i
+    // egyeztetés) -- a "melyik vonalhoz tartozik" tisztán a mi belső fájlszervezésünk,
+    // nem OSM-tag, ezért ez a művelet OSM-et sosem érinti, csak a GitHub-fájlokat.
+    let athelyezesSor = '';
+    if (osmSzerkesztesEngedelyezve && tags._osm_id && tags._vonal) {
+      const opciok = VONALAK.filter(v => v.nev !== tags._vonal)
+        .map(v => `<option value="${escapeHtml(vonalKodja(v))}">${escapeHtml(v.nev)}</option>`).join('');
+      athelyezesSor = `<div style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+        <select id="athelyezesSelect-${escapeHtml(tags._osm_id)}" style="font-size:12px; padding:2px 4px; max-width:180px;">${opciok}</select>
+        <button onclick="athelyezesIndul('${escapeHtml(tags._osm_id)}')"
+                style="font-size:12px; padding:4px 8px; border:1px solid #ccc; border-radius:4px; background:#f0f0f0; cursor:pointer;">
+          Áthelyezés másik vonalra
+        </button>
+      </div>`;
+    }
+
+    return `${osmIdSor}<table class="popup-table">${rows}</table>${sajatSor}${gombok}${athelyezesSor}`;
   }
+
+  // Áthelyezés másik vonalra -- lásd popupContent(). Globális, mert a popup HTML-je
+  // inline onclick-kel hívja (a többi generikus marker-popupnál, pl. Szerkesztés, is ez
+  // a minta, nincs popupopen-alapú eseménykezelő ehhez a markertípushoz).
+  window.athelyezesIndul = async function(osmId) {
+    const select = document.getElementById('athelyezesSelect-' + osmId);
+    if (!select || !select.value) return;
+    const ujVonalKod = select.value;
+    const ujVonal = VONALAK.find(v => vonalKodja(v) === ujVonalKod);
+    const rekord = sajatAdatokTerkep.get(String(osmId));
+    if (!ujVonal || !rekord) { alert('Nem található a rekord vagy a célvonal.'); return; }
+    const regiVonalObj = VONALAK.find(v => v.nev === rekord._vonal);
+    const regiVonalKod = regiVonalObj ? vonalKodja(regiVonalObj) : (rekord._vonal || '').split(' ')[0];
+    if (!confirm(`Áthelyezed ezt az elemet "${rekord._vonal}" vonalról "${ujVonal.nev}" vonalra?\n\nA térképi elrendezés csak a vonalszűrők frissítésekor vagy újratöltéskor lesz pontos.`)) return;
+    if (typeof githubMentes === 'undefined' || !githubMentes.tokenVan()) {
+      alert('A áthelyezéshez be kell állítani a GitHub tokent -- nyiss meg egy oszlopot Szerkesztésre, ott az adatlapon található a token-beállítás.');
+      return;
+    }
+    map.closePopup();
+    statusEl.textContent = `Áthelyezés: ${rekord._vonal} → ${ujVonal.nev}...`;
+    statusEl.style.color = '#555';
+    try {
+      const ujRekord = { ...rekord, _vonal: ujVonal.nev };
+      await githubMentes.rekordAthelyezeseVonalra(regiVonalKod, ujVonalKod, osmId, ujRekord);
+      sajatAdatokTerkep.set(String(osmId), ujRekord);
+      statusEl.textContent = `Áthelyezve: ${ujVonal.nev}. A pontos térképi elrendezéshez frissítsd a vonalszűrőket vagy töltsd újra az oldalt.`;
+      statusEl.style.color = 'green';
+    } catch (err) {
+      statusEl.textContent = 'Áthelyezés sikertelen: ' + err.message;
+      statusEl.style.color = 'red';
+    }
+  };
 
   function classify(tags) {
     for (const type of TYPES) {

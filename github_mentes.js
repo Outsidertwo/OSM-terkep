@@ -447,10 +447,70 @@ const githubMentes = (function () {
     }
   }
 
+  // Egy már regisztrált (oszlop/szelvénykő/útátjáró/egyéb) rekord áthelyezése egy másik
+  // vonal fájljába -- pl. amikor az Overpass-regisztráció a vonalak találkozásánál rossz
+  // vonalhoz sorolt be egy elemet (lásd 2026-09-26-i egyeztetés). Azonnal ír GitHub-ra,
+  // OSM-et nem érinti (a fájl-hovatartozás tisztán a mi belső szervezésünk, nem OSM-tag).
+  // Biztonsági sorrend: ELŐBB kerül be az új vonal fájljába, csak utána törlődik a régiből --
+  // ha a törlés valamiért elszállna, a rekord átmenetileg inkább duplikálódik, mintsem
+  // elvesszen.
+  async function rekordAthelyezeseVonalra(regiVonalKod, ujVonalKod, osmId, ujRekord, maxProbalkozas = 3) {
+    async function sorBeillesztese(vonalKod, uzenet) {
+      const path = `/repos/${REPO}/contents/${fajlUtvonal(vonalKod)}`;
+      for (let probalkozas = 1; probalkozas <= maxProbalkozas; probalkozas++) {
+        const getValasz = await githubFetch(`${path}?ref=${BRANCH}`, { method: 'GET' });
+        let sorok = [];
+        let sha = null;
+        if (getValasz.status === 200) {
+          const adat = await getValasz.json();
+          sha = adat.sha;
+          sorok = b64Decode(adat.content.replace(/\n/g, '')).split('\n').filter(s => s.trim() !== '');
+        } else if (getValasz.status !== 404) {
+          const hibaSzoveg = await getValasz.text().catch(() => '');
+          throw new Error(`Nem sikerült lekérni a(z) ${vonalKod} fájlt (${getValasz.status}): ${hibaSzoveg}`);
+        }
+        const mar_ott_van = sorok.some(sor => { try { return String(JSON.parse(sor)._osm_id) === String(osmId); } catch (e) { return false; } });
+        if (!mar_ott_van) sorok.push(JSON.stringify(ujRekord));
+        const body = { message: uzenet, content: b64Encode(sorok.join('\n') + '\n'), branch: BRANCH };
+        if (sha) body.sha = sha;
+        const putValasz = await githubFetch(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (putValasz.ok) return;
+        if (putValasz.status === 409 && probalkozas < maxProbalkozas) continue;
+        const hibaSzoveg = await putValasz.text().catch(() => '');
+        throw new Error(`Áthelyezés (beillesztés ${vonalKod}) sikertelen (${putValasz.status}): ${hibaSzoveg}`);
+      }
+    }
+    async function sorTorlese(vonalKod, uzenet) {
+      const path = `/repos/${REPO}/contents/${fajlUtvonal(vonalKod)}`;
+      for (let probalkozas = 1; probalkozas <= maxProbalkozas; probalkozas++) {
+        const getValasz = await githubFetch(`${path}?ref=${BRANCH}`, { method: 'GET' });
+        if (getValasz.status === 404) return; // nincs mit törölni
+        if (getValasz.status !== 200) {
+          const hibaSzoveg = await getValasz.text().catch(() => '');
+          throw new Error(`Nem sikerült lekérni a(z) ${vonalKod} fájlt (${getValasz.status}): ${hibaSzoveg}`);
+        }
+        const adat = await getValasz.json();
+        const sha = adat.sha;
+        const sorok = b64Decode(adat.content.replace(/\n/g, '')).split('\n').filter(s => s.trim() !== '');
+        const megmaradoSorok = sorok.filter(sor => { try { return String(JSON.parse(sor)._osm_id) !== String(osmId); } catch (e) { return true; } });
+        if (megmaradoSorok.length === sorok.length) return; // nem volt ott, nincs mit törölni
+        const body = { message: uzenet, content: b64Encode(megmaradoSorok.length ? megmaradoSorok.join('\n') + '\n' : ''), branch: BRANCH, sha };
+        const putValasz = await githubFetch(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (putValasz.ok) return;
+        if (putValasz.status === 409 && probalkozas < maxProbalkozas) continue;
+        const hibaSzoveg = await putValasz.text().catch(() => '');
+        throw new Error(`Áthelyezés (törlés ${vonalKod}) sikertelen (${putValasz.status}): ${hibaSzoveg}`);
+      }
+    }
+    await sorBeillesztese(ujVonalKod, `Elem áthelyezve ide (${osmId}: ${regiVonalKod} -> ${ujVonalKod})`);
+    await sorTorlese(regiVonalKod, `Elem áthelyezve innen (${osmId}: ${regiVonalKod} -> ${ujVonalKod})`);
+  }
+
   return {
     tokenBeallitasa, token, tokenVan, tokenTorlese, rekordMentese, ujRekordokKotegeltMentese,
     pendingOlvasas, pendingMentese, pendingTorles, pendingDarab, pendingFeltoltesVonalra,
     fajlUtvonalToldasok, pendingToldasOlvasas, pendingToldasMentese, pendingToldasTorles,
-    pendingToldasDarab, pendingToldasFeltoltesVonalra, toldasTorleseElesbol, toldasSzerkeszteseElesben
+    pendingToldasDarab, pendingToldasFeltoltesVonalra, toldasTorleseElesbol, toldasSzerkeszteseElesben,
+    rekordAthelyezeseVonalra
   };
 })();
