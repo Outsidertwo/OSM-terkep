@@ -52,6 +52,15 @@ const githubMentes = (function () {
     });
   }
 
+  // 409 (SHA-ütközés) újrapróbálkozás előtti rövid várakozás. Enélkül közvetlenül egy
+  // sikeres írás után a következő GET néha még a régi (elavult) SHA-t adja vissza egy
+  // rövid, GitHub API-oldali propagációs késés miatt -- emiatt várakozás nélkül mindhárom
+  // próbálkozás ugyanabba az ablakba eshet, és mind a 3 hiába fut le (2026-09-26-i
+  // hibajavítás). A várakozás próbálkozásonként nő (400ms, 800ms, ...).
+  function varakozasUjraprobalkozasElott(probalkozas) {
+    return new Promise(r => setTimeout(r, 400 * probalkozas));
+  }
+
   // Egyetlen rekord mentése/frissítése a vonalhoz tartozó fájlban. `kulcs` az oszlopszám
   // (vagy bármi más egyedi azonosító), `rekord` egy sima JS objektum, `vonalKod` a vonal
   // rövid fájlkódja (pl. "120a") -- ez dönti el, melyik sajat_adatok/{kod}.ndjson fájlba
@@ -270,7 +279,7 @@ const githubMentes = (function () {
         body: JSON.stringify(body)
       });
       if (putValasz.ok) return await putValasz.json();
-      if (putValasz.status === 409 && probalkozas < maxProbalkozas) continue; // SHA-ütközés -- újrapróbál
+      if (putValasz.status === 409 && probalkozas < maxProbalkozas) { await varakozasUjraprobalkozasElott(probalkozas); continue; } // SHA-ütközés -- újrapróbál
       const hibaSzoveg = await putValasz.text().catch(() => '');
       throw new Error(`Feltöltés sikertelen (${putValasz.status}) ${maxProbalkozas} próbálkozás után: ${hibaSzoveg}`);
     }
@@ -363,7 +372,7 @@ const githubMentes = (function () {
         body: JSON.stringify(body)
       });
       if (putValasz.ok) return await putValasz.json();
-      if (putValasz.status === 409 && probalkozas < maxProbalkozas) continue;
+      if (putValasz.status === 409 && probalkozas < maxProbalkozas) { await varakozasUjraprobalkozasElott(probalkozas); continue; }
       const hibaSzoveg = await putValasz.text().catch(() => '');
       throw new Error(`Toldás-feltöltés sikertelen (${putValasz.status}) ${maxProbalkozas} próbálkozás után: ${hibaSzoveg}`);
     }
@@ -401,7 +410,7 @@ const githubMentes = (function () {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
       });
       if (putValasz.ok) return await putValasz.json();
-      if (putValasz.status === 409 && probalkozas < maxProbalkozas) continue;
+      if (putValasz.status === 409 && probalkozas < maxProbalkozas) { await varakozasUjraprobalkozasElott(probalkozas); continue; }
       const hibaSzoveg = await putValasz.text().catch(() => '');
       throw new Error(`Toldás törlése sikertelen (${putValasz.status}) ${maxProbalkozas} próbálkozás után: ${hibaSzoveg}`);
     }
@@ -441,7 +450,7 @@ const githubMentes = (function () {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
       });
       if (putValasz.ok) return await putValasz.json();
-      if (putValasz.status === 409 && probalkozas < maxProbalkozas) continue;
+      if (putValasz.status === 409 && probalkozas < maxProbalkozas) { await varakozasUjraprobalkozasElott(probalkozas); continue; }
       const hibaSzoveg = await putValasz.text().catch(() => '');
       throw new Error(`Toldás szerkesztése sikertelen (${putValasz.status}) ${maxProbalkozas} próbálkozás után: ${hibaSzoveg}`);
     }
@@ -475,7 +484,7 @@ const githubMentes = (function () {
         if (sha) body.sha = sha;
         const putValasz = await githubFetch(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         if (putValasz.ok) return;
-        if (putValasz.status === 409 && probalkozas < maxProbalkozas) continue;
+        if (putValasz.status === 409 && probalkozas < maxProbalkozas) { await varakozasUjraprobalkozasElott(probalkozas); continue; }
         const hibaSzoveg = await putValasz.text().catch(() => '');
         throw new Error(`Áthelyezés (beillesztés ${vonalKod}) sikertelen (${putValasz.status}): ${hibaSzoveg}`);
       }
@@ -497,7 +506,7 @@ const githubMentes = (function () {
         const body = { message: uzenet, content: b64Encode(megmaradoSorok.length ? megmaradoSorok.join('\n') + '\n' : ''), branch: BRANCH, sha };
         const putValasz = await githubFetch(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         if (putValasz.ok) return;
-        if (putValasz.status === 409 && probalkozas < maxProbalkozas) continue;
+        if (putValasz.status === 409 && probalkozas < maxProbalkozas) { await varakozasUjraprobalkozasElott(probalkozas); continue; }
         const hibaSzoveg = await putValasz.text().catch(() => '');
         throw new Error(`Áthelyezés (törlés ${vonalKod}) sikertelen (${putValasz.status}): ${hibaSzoveg}`);
       }
