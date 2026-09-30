@@ -3301,3 +3301,4 @@
 {"szam":"07510A","_osm_id":14031114587,"lat":47.291597,"lon":20.062384,"osm_tagek":{"name":"07510A KR","operator":"MÁV","operator:wikidata":"Q168082","power":"catenary_mast"},"_vonal":"120a (Budapest–Szolnok)","tartoszerkezetek":[]}
 {"szam":"07514","_osm_id":14031116806,"lat":47.291216,"lon":20.062659,"osm_tagek":{"name":"07514 L","operator":"MÁV","operator:wikidata":"Q168082","power":"catenary_mast"},"_vonal":"120a (Budapest–Szolnok)","tartoszerkezetek":[]}
 {"szam":"07516","_osm_id":14031115859,"lat":47.290874,"lon":20.062919,"osm_tagek":{"name":"07516 KR","operator":"MÁV","operator:wikidata":"Q168082","power":"catenary_mast"},"_vonal":"120a (Budapest–Szolnok)","tartoszerkezetek":[]}
+{"szam":"07520","_osm_id":14031114197,"lat":47.290451,"lon":20.063149,"osm_tagek":{"name":"07520 KR","operator":"MÁV","operator:wikidata":"Q168082","power":"catenary_mast"},"_vonal":"120a (Budapest–Szolnok)","tartoszerkezetek":[]}
